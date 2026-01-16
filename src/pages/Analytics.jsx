@@ -44,16 +44,89 @@ export default function Analytics() {
 
     const pieData = Object.values(categoryData).filter(d => d.value > 0);
 
-    // Monthly Data: Again, summing raw numbers for visual bars
-    const totalMonthlyRaw = subscriptions.reduce((acc, s) => acc + (s.cost || 0), 0);
-    const monthlyData = [
-        { name: 'Янв', cost: totalMonthlyRaw },
-        { name: 'Фев', cost: totalMonthlyRaw },
-        { name: 'Мар', cost: totalMonthlyRaw },
-        { name: 'Апр', cost: totalMonthlyRaw },
-        { name: 'Май', cost: totalMonthlyRaw },
-        { name: 'Июн', cost: totalMonthlyRaw },
-    ];
+    // Calculate monthly expenses based on payment dates and billing periods
+    const calculateMonthlyExpenses = () => {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+        
+        const months = [
+            { name: 'Янв', month: 0, cost: 0 },
+            { name: 'Фев', month: 1, cost: 0 },
+            { name: 'Мар', month: 2, cost: 0 },
+            { name: 'Апр', month: 3, cost: 0 },
+            { name: 'Май', month: 4, cost: 0 },
+            { name: 'Июн', month: 5, cost: 0 },
+            { name: 'Июл', month: 6, cost: 0 },
+            { name: 'Авг', month: 7, cost: 0 },
+            { name: 'Сен', month: 8, cost: 0 },
+            { name: 'Окт', month: 9, cost: 0 },
+            { name: 'Ноя', month: 10, cost: 0 },
+            { name: 'Дек', month: 11, cost: 0 },
+        ];
+
+        subscriptions.forEach(sub => {
+            if (!sub.nextPaymentDate) return;
+
+            // Parse nextPaymentDate
+            let paymentDate;
+            if (sub.nextPaymentDate.toDate) {
+                paymentDate = sub.nextPaymentDate.toDate();
+            } else {
+                paymentDate = new Date(sub.nextPaymentDate);
+            }
+            paymentDate.setHours(0, 0, 0, 0);
+
+            const billingPeriod = sub.billingPeriod || (sub.cycle && sub.cycle.includes('год') ? 'yearly' : 'monthly');
+            const cost = sub.cost || 0;
+
+            // For yearly subscriptions
+            if (billingPeriod === 'yearly') {
+                const paymentMonth = paymentDate.getMonth();
+                const paymentYear = paymentDate.getFullYear();
+                
+                // Add to the month when payment occurs (current or next year)
+                if (paymentYear === currentYear && paymentMonth < 12) {
+                    months[paymentMonth].cost += cost;
+                } else if (paymentYear === currentYear + 1 && paymentMonth < 12) {
+                    months[paymentMonth].cost += cost;
+                }
+            } else {
+                // For monthly subscriptions - calculate based on payment day
+                const paymentDay = paymentDate.getDate();
+                
+                // Start from nextPaymentDate
+                let currentPaymentDate = new Date(paymentDate);
+                
+                // If payment date is in the past, move to next occurrence
+                while (currentPaymentDate < now) {
+                    currentPaymentDate = new Date(currentPaymentDate.getFullYear(), currentPaymentDate.getMonth() + 1, paymentDay);
+                }
+                
+                // Calculate payments for all 12 months of current year
+                // Start from the first payment date and project forward
+                for (let i = 0; i < 12; i++) {
+                    const checkDate = new Date(currentPaymentDate.getFullYear(), currentPaymentDate.getMonth() + i, paymentDay);
+                    const checkMonth = checkDate.getMonth();
+                    const checkYear = checkDate.getFullYear();
+                    
+                    // Count all months in current year
+                    if (checkYear === currentYear && checkMonth < 12) {
+                        months[checkMonth].cost += cost;
+                    }
+                    // Also count next year if we're projecting forward
+                    else if (checkYear === currentYear + 1 && checkMonth < 12) {
+                        months[checkMonth].cost += cost;
+                    }
+                }
+            }
+        });
+
+        return months;
+    };
+
+    const monthlyData = calculateMonthlyExpenses();
 
     const RADIAN = Math.PI / 180;
     const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }) => {
