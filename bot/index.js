@@ -4,13 +4,30 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
 // Initialize Firebase Admin
+let serviceAccount;
 try {
-    const serviceAccount = require('./service-account.json');
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-    });
+    // For Railway - get from environment variable
+    if (process.env.SERVICE_ACCOUNT) {
+        serviceAccount = JSON.parse(process.env.SERVICE_ACCOUNT);
+        admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount)
+        });
+        console.log('✅ Firebase Admin initialized from environment variable');
+    } else {
+        // Local development - try to load from file
+        try {
+            serviceAccount = require('./service-account.json');
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount)
+            });
+            console.log('✅ Firebase Admin initialized from file');
+        } catch (fileError) {
+            console.warn("⚠️ Warning: 'service-account.json' not found. Bot database writes will fail.");
+        }
+    }
 } catch (e) {
-    console.warn("⚠️ Warning: 'service-account.json' not found. Bot database writes will fail.");
+    console.error("❌ Firebase Admin initialization error:", e.message);
+    console.warn("⚠️ Warning: Bot database writes will fail.");
 }
 
 const db = admin.firestore();
@@ -200,5 +217,11 @@ bot.on('voice', (msg) => {
     const chatId = msg.chat.id;
     bot.sendMessage(chatId, '🎤 Я пока не умею слушать голосовые сообщения, но скоро научусь! Пожалуйста, напишите текстом.');
 });
+
+// Debug info
+console.log('🔍 Debug info:');
+console.log('- TELEGRAM_BOT_TOKEN:', process.env.TELEGRAM_BOT_TOKEN ? `✅ Set (${process.env.TELEGRAM_BOT_TOKEN.substring(0, 10)}...)` : '❌ Missing');
+console.log('- SERVICE_ACCOUNT:', process.env.SERVICE_ACCOUNT ? `✅ Set (${process.env.SERVICE_ACCOUNT.substring(0, 50)}...)` : '❌ Missing');
+console.log('- WEB_APP_URL:', process.env.WEB_APP_URL || 'Using default');
 
 console.log('Bot is running...');
