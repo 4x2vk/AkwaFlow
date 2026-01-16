@@ -1,0 +1,176 @@
+import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
+import { useSubscriptions } from '../../context/SubscriptionContext';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
+import { Card } from '../ui/Card';
+
+export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
+    const { addSubscription, updateSubscription, categories } = useSubscriptions();
+    const [formData, setFormData] = useState({
+        name: '',
+        cost: '',
+        currency: 'RUB',
+        date: '',
+        category: 'Общие',
+        color: '#00D68F'
+    });
+
+    const currencies = [
+        { code: 'RUB', symbol: '₽' },
+        { code: 'USD', symbol: '$' },
+        { code: 'WON', symbol: '₩' },
+        { code: 'KZT', symbol: '₸' }
+    ];
+
+    // Combine user categories with "Общие" if not present
+    const hasGeneral = categories.some(c => c.name === 'Общие');
+    const displayCategories = hasGeneral
+        ? categories
+        : [{ name: 'Общие', color: '#6B7280' }, ...categories];
+
+    // Deduplicate just in case
+    const uniqueCategories = displayCategories.filter((v, i, a) => a.findIndex(t => (t.name === v.name)) === i);
+
+    useEffect(() => {
+        if (initialData) {
+            setFormData({
+                name: initialData.name,
+                cost: initialData.cost,
+                currency: initialData.currency || 'RUB',
+                date: initialData.nextPaymentDate || '',
+                category: initialData.category || 'Общие',
+                color: initialData.color || '#00D68F'
+            });
+        } else {
+            setFormData({
+                name: '',
+                cost: '',
+                currency: 'RUB',
+                date: '',
+                category: 'Общие',
+                color: '#00D68F'
+            });
+        }
+    }, [initialData, isOpen]);
+
+    if (!isOpen) return null;
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const selectedCat = uniqueCategories.find(c => c.name === formData.category);
+        const currencySymbol = currencies.find(c => c.code === formData.currency)?.symbol || '₽';
+
+        const subData = {
+            name: formData.name,
+            cost: Number(formData.cost),
+            currency: formData.currency,
+            currencySymbol: currencySymbol,
+            cycle: formData.date ? `Каждый ${new Date(formData.date).getDate()} числа` : 'Ежемесячно',
+            nextPaymentDate: formData.date,
+            category: formData.category,
+            // Use category color if available, else default green/form color
+            color: selectedCat?.color || formData.color,
+            icon: formData.name[0].toUpperCase()
+        };
+
+        try {
+            console.log('[MODAL] Submitting subscription data:', subData);
+            if (initialData) {
+                await updateSubscription(initialData.id, subData);
+                console.log('[MODAL] Subscription updated successfully');
+            } else {
+                await addSubscription(subData);
+                console.log('[MODAL] Subscription added successfully');
+            }
+            onClose();
+        } catch (error) {
+            console.error('[MODAL] Error saving subscription:', error);
+            alert('Ошибка при сохранении подписки: ' + error.message);
+            // Modal stays open so user can retry
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
+            <Card className="w-full max-w-sm bg-surface ring-1 ring-white/10">
+                <div className="flex items-center justify-between p-4 border-b border-white/5">
+                    <h2 className="text-lg font-bold text-white">
+                        {initialData ? 'Редактировать подписку' : 'Новая подписка'}
+                    </h2>
+                    <Button variant="ghost" size="icon" onClick={onClose}>
+                        <X className="w-5 h-5" />
+                    </Button>
+                </div>
+
+                <form onSubmit={handleSubmit} className="p-4 space-y-4">
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-text-secondary">Название сервиса</label>
+                        <Input
+                            required
+                            placeholder="Netflix, Spotify..."
+                            value={formData.name}
+                            onChange={e => setFormData({ ...formData, name: e.target.value })}
+                        />
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-text-secondary">Категория</label>
+                        <select
+                            className="flex h-12 w-full rounded-xl border border-white/10 bg-surface px-3 py-2 text-sm text-text ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                            value={formData.category}
+                            onChange={e => setFormData({ ...formData, category: e.target.value })}
+                        >
+                            {uniqueCategories.map(cat => (
+                                <option key={cat.name} value={cat.name}>{cat.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-text-secondary">Стоимость</label>
+                            <Input
+                                type="number"
+                                required
+                                placeholder="10000"
+                                value={formData.cost}
+                                onChange={e => setFormData({ ...formData, cost: e.target.value })}
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-text-secondary">Валюта</label>
+                            <select
+                                className="flex h-12 w-full rounded-xl border border-white/10 bg-surface px-3 py-2 text-sm text-text ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                                value={formData.currency}
+                                onChange={e => setFormData({ ...formData, currency: e.target.value })}
+                            >
+                                {currencies.map(c => (
+                                    <option key={c.code} value={c.code}>{c.code} ({c.symbol})</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-text-secondary">Дата первого платежа</label>
+                        <Input
+                            type="date"
+                            required
+                            value={formData.date}
+                            onChange={e => setFormData({ ...formData, date: e.target.value })}
+                            className="block"
+                            style={{ colorScheme: 'dark' }}
+                        />
+                    </div>
+
+                    <div className="pt-2">
+                        <Button type="submit" className="w-full font-bold">
+                            {initialData ? 'Сохранить' : 'Добавить'}
+                        </Button>
+                    </div>
+                </form>
+            </Card>
+        </div>
+    );
+}

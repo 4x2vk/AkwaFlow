@@ -1,0 +1,48 @@
+import { Banknote } from 'lucide-react';
+import { BottomNav } from './BottomNav';
+import { useAuth } from '../../context/AuthContext';
+
+export function Layout({ children }) {
+    const { user } = useAuth();
+    return (
+        <div className="min-h-screen bg-background text-text flex flex-col">
+            <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-white/5">
+                <div className="max-w-md mx-auto px-4 h-14 flex items-center">
+                    <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+                            <Banknote className="text-white w-5 h-5" />
+                        </div>
+                        <h1 className="text-xl font-bold bg-gradient-to-r from-green-400 to-emerald-600 bg-clip-text text-transparent">
+                            AkwaFlow
+                        </h1>
+                    </div>
+                </div>
+            </header>
+
+            <main className="flex-1 max-w-md mx-auto w-full p-4 pb-24">
+                {!user ? (
+                    <div className="flex flex-col items-center justify-center h-[50vh] text-center space-y-4">
+                        <Banknote className="w-16 h-16 text-gray-600 opacity-50" />
+                        <h2 className="text-xl font-bold text-white">Login Required</h2>
+                        <p className="text-sm text-gray-400 max-w-[250px]">
+                            Please open this app from the Telegram Bot menu.
+                        </p>
+                    </div>
+                ) : (
+                    children
+                )}
+            </main>
+
+            <BottomNav />
+            <BottomNav />
+            <div className="text-[10px] text-center pb-24 text-gray-400 break-all px-4">
+                User ID: {user?.uid || 'null'} <br />
+                TG: {typeof window.Telegram !== 'undefined' ? 'OK' : 'MISS'} |
+                WA: {window.Telegram?.WebApp ? 'OK' : 'MISS'} |
+                User: {window.Telegram?.WebApp?.initDataUnsafe?.user ? 'OK' : 'MISS'} <br />
+                initData: {window.Telegram?.WebApp?.initData ? 'exists' : 'missing'} <br />
+                Expected: 993211663 (from bot chatId)
+            </div>
+        </div>
+    );
+}
