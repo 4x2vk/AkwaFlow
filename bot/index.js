@@ -384,6 +384,45 @@ server.listen(PORT, () => {
 // Handle server errors
 server.on('error', (error) => {
     console.error('❌ Server error:', error);
+    // Don't exit - Railway will restart if needed
 });
 
+// Keep process alive - prevent accidental exit
+process.on('SIGTERM', () => {
+    console.log('⚠️ SIGTERM received, shutting down gracefully...');
+    server.close(() => {
+        console.log('✅ Server closed');
+        process.exit(0);
+    });
+});
+
+process.on('SIGINT', () => {
+    console.log('⚠️ SIGINT received, shutting down gracefully...');
+    server.close(() => {
+        console.log('✅ Server closed');
+        process.exit(0);
+    });
+});
+
+// Handle uncaught exceptions - don't crash
+process.on('uncaughtException', (error) => {
+    console.error('❌ Uncaught Exception:', error);
+    // Don't exit - log and continue
+});
+
+// Handle unhandled promise rejections - don't crash
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    // Don't exit - log and continue
+});
+
+// Keep process alive
+setInterval(() => {
+    // Heartbeat to keep process alive
+    if (server.listening) {
+        console.log('💓 Heartbeat - Bot is alive');
+    }
+}, 3600000); // Every hour
+
 console.log('Bot is running...');
+console.log('✅ All systems operational. Bot will stay online.');
