@@ -104,20 +104,22 @@ export default function Analytics() {
                     currentPaymentDate = new Date(currentPaymentDate.getFullYear(), currentPaymentDate.getMonth() + 1, paymentDay);
                 }
                 
-                // Calculate payments for all 12 months of current year
-                // Start from the first payment date and project forward
-                for (let i = 0; i < 12; i++) {
-                    const checkDate = new Date(currentPaymentDate.getFullYear(), currentPaymentDate.getMonth() + i, paymentDay);
-                    const checkMonth = checkDate.getMonth();
-                    const checkYear = checkDate.getFullYear();
+                // For monthly subscriptions, add cost to each month of current year
+                // where payment will occur (based on payment day)
+                for (let month = 0; month < 12; month++) {
+                    // Calculate payment date for this month
+                    const monthPaymentDate = new Date(currentYear, month, paymentDay);
                     
-                    // Count all months in current year
-                    if (checkYear === currentYear && checkMonth < 12) {
-                        months[checkMonth].cost += cost;
-                    }
-                    // Also count next year if we're projecting forward
-                    else if (checkYear === currentYear + 1 && checkMonth < 12) {
-                        months[checkMonth].cost += cost;
+                    // If currentPaymentDate is in current year, only add for months >= currentPaymentDate
+                    // If currentPaymentDate is in next year, add for all months of current year
+                    if (currentPaymentDate.getFullYear() === currentYear) {
+                        // Payment is in current year - add for months from payment month onwards
+                        if (month >= currentPaymentDate.getMonth()) {
+                            months[month].cost += cost;
+                        }
+                    } else if (currentPaymentDate.getFullYear() > currentYear) {
+                        // Payment is in next year - add for all months of current year
+                        months[month].cost += cost;
                     }
                 }
             }
