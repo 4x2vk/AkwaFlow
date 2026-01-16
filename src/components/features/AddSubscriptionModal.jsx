@@ -13,7 +13,8 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
         currency: 'RUB',
         date: '',
         category: 'Общие',
-        color: '#00D68F'
+        color: '#00D68F',
+        billingPeriod: 'monthly' // 'monthly' or 'yearly'
     });
 
     const currencies = [
@@ -34,13 +35,20 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
 
     useEffect(() => {
         if (initialData) {
+            // Determine billing period from cycle
+            let billingPeriod = 'monthly';
+            if (initialData.cycle && initialData.cycle.includes('год')) {
+                billingPeriod = 'yearly';
+            }
+            
             setFormData({
                 name: initialData.name,
                 cost: initialData.cost,
                 currency: initialData.currency || 'RUB',
                 date: initialData.nextPaymentDate || '',
                 category: initialData.category || 'Общие',
-                color: initialData.color || '#00D68F'
+                color: initialData.color || '#00D68F',
+                billingPeriod: billingPeriod
             });
         } else {
             setFormData({
@@ -49,7 +57,8 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
                 currency: 'RUB',
                 date: '',
                 category: 'Общие',
-                color: '#00D68F'
+                color: '#00D68F',
+                billingPeriod: 'monthly'
             });
         }
     }, [initialData, isOpen]);
@@ -61,12 +70,28 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
         const selectedCat = uniqueCategories.find(c => c.name === formData.category);
         const currencySymbol = currencies.find(c => c.code === formData.currency)?.symbol || '₽';
 
+        // Determine cycle text based on billing period
+        let cycleText = 'Ежемесячно';
+        if (formData.billingPeriod === 'yearly') {
+            if (formData.date) {
+                const paymentDate = new Date(formData.date);
+                cycleText = `Ежегодно, ${paymentDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}`;
+            } else {
+                cycleText = 'Ежегодно';
+            }
+        } else {
+            if (formData.date) {
+                cycleText = `Каждый ${new Date(formData.date).getDate()} числа`;
+            }
+        }
+
         const subData = {
             name: formData.name,
             cost: Number(formData.cost),
             currency: formData.currency,
             currencySymbol: currencySymbol,
-            cycle: formData.date ? `Каждый ${new Date(formData.date).getDate()} числа` : 'Ежемесячно',
+            cycle: cycleText,
+            billingPeriod: formData.billingPeriod,
             nextPaymentDate: formData.date,
             category: formData.category,
             // Use category color if available, else default green/form color
@@ -153,14 +178,30 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
                     </div>
 
                     <div className="space-y-2">
+                        <label className="text-sm font-medium text-text-secondary">Период списания</label>
+                        <select
+                            className="flex h-12 w-full rounded-xl border border-white/10 bg-surface px-3 py-2 text-sm text-text ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                            value={formData.billingPeriod}
+                            onChange={e => setFormData({ ...formData, billingPeriod: e.target.value })}
+                        >
+                            <option value="monthly">Ежемесячно</option>
+                            <option value="yearly">Ежегодно</option>
+                        </select>
+                    </div>
+
+                    <div className="space-y-2">
                         <label className="text-sm font-medium text-text-secondary">Дата первого платежа</label>
                         <Input
                             type="date"
                             required
                             value={formData.date}
                             onChange={e => setFormData({ ...formData, date: e.target.value })}
-                            className="block"
-                            style={{ colorScheme: 'dark' }}
+                            className="leading-normal"
+                            style={{ 
+                                colorScheme: 'dark',
+                                paddingTop: '0.75rem',
+                                paddingBottom: '0.75rem'
+                            }}
                         />
                     </div>
 

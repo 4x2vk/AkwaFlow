@@ -1,6 +1,7 @@
 import TelegramBot from 'node-telegram-bot-api';
 import admin from 'firebase-admin';
 import { createRequire } from 'module';
+import http from 'http';
 const require = createRequire(import.meta.url);
 
 // Initialize Firebase Admin
@@ -37,10 +38,29 @@ const webAppUrl = process.env.WEB_APP_URL || 'https://akwaflow-manager-v1.web.ap
 
 if (!token) {
     console.error("❌ CRTICAL ERROR: TELEGRAM_BOT_TOKEN is missing provided!");
+    console.error("Please set TELEGRAM_BOT_TOKEN environment variable");
+    // Don't exit - let Railway see the error in logs
     process.exit(1);
 }
 
-const bot = new TelegramBot(token, { polling: true });
+let bot;
+try {
+    bot = new TelegramBot(token, { polling: true });
+    console.log('✅ Telegram Bot initialized');
+} catch (error) {
+    console.error('❌ Error initializing Telegram Bot:', error);
+    process.exit(1);
+}
+
+// Handle bot errors
+bot.on('error', (error) => {
+    console.error('❌ Bot error:', error);
+});
+
+bot.on('polling_error', (error) => {
+    console.error('❌ Bot polling error:', error);
+    // Don't exit on polling errors - they can be temporary
+});
 
 // Currency Helper
 const detectCurrency = (input) => {
@@ -218,10 +238,152 @@ bot.on('voice', (msg) => {
     bot.sendMessage(chatId, '🎤 Я пока не умею слушать голосовые сообщения, но скоро научусь! Пожалуйста, напишите текстом.');
 });
 
+// Notification system - check for upcoming payments
+const checkUpcomingPayments = async () => {
+    try {
+        console.log('[NOTIFICATIONS] Checking for upcoming payments...');
+        const now = new Date();
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
+        
+        const dayAfter = new Date(tomorrow);
+        dayAfter.setDate(dayAfter.getDate() + 1);
+        
+        // Get all users
+        const usersSnapshot = await db.collection('users').get();
+        let totalNotifications = 0;
+        
+        for (const userDoc of usersSnapshot.docs) {
+            const userId = userDoc.id;
+            const subscriptionsSnapshot = await db.collection('users').doc(userId)
+                .collection('subscriptions').get();
+            
+            const upcomingSubs = [];
+            
+            for (const subDoc of subscriptionsSnapshot.docs) {
+                const subData = subDoc.data();
+                if (!subData.nextPaymentDate) continue;
+                
+                // Parse nextPaymentDate (can be string or Timestamp)
+                let paymentDate;
+                if (subData.nextPaymentDate.toDate) {
+                    paymentDate = subData.nextPaymentDate.toDate();
+                } else {
+                    paymentDate = new Date(subData.nextPaymentDate);
+                }
+                
+                paymentDate.setHours(0, 0, 0, 0);
+                
+                // Check if payment is tomorrow (within 24 hours)
+                if (paymentDate >= tomorrow && paymentDate < dayAfter) {
+                    // Check if we already sent notification today
+                    const lastNotification = subData.lastNotificationDate;
+                    const today = new Date(now);
+                    today.setHours(0, 0, 0, 0);
+                    
+                    let shouldNotify = true;
+                    if (lastNotification) {
+                        const lastNotifDate = lastNotification.toDate ? 
+                            lastNotification.toDate() : new Date(lastNotification);
+                        lastNotifDate.setHours(0, 0, 0, 0);
+                        if (lastNotifDate.getTime() === today.getTime()) {
+                            shouldNotify = false; // Already notified today
+                        }
+                    }
+                    
+                    if (shouldNotify) {
+                        upcomingSubs.push({
+                            id: subDoc.id,
+                            ...subData,
+                            paymentDate: paymentDate
+                        });
+                    }
+                }
+            }
+            
+            // Send notification if there are upcoming payments
+            if (upcomingSubs.length > 0) {
+                try {
+                    let message = '🔔 *Напоминание об оплате*\n\n';
+                    message += 'Завтра нужно оплатить:\n\n';
+                    
+                    for (const sub of upcomingSubs) {
+                        const symbol = sub.currencySymbol || '₩';
+                        const dateStr = sub.paymentDate.toLocaleDateString('ru-RU', { 
+                            day: 'numeric', 
+                            month: 'long' 
+                        });
+                        message += `• *${sub.name}*: ${symbol}${sub.cost}\n`;
+                        message += `  Дата: ${dateStr}\n\n`;
+                        
+                        // Update lastNotificationDate
+                        await db.collection('users').doc(userId)
+                            .collection('subscriptions').doc(sub.id)
+                            .update({
+                                lastNotificationDate: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                    }
+                    
+                    await bot.sendMessage(userId, message, { parse_mode: 'Markdown' });
+                    totalNotifications++;
+                    console.log(`[NOTIFICATIONS] Sent notification to user ${userId} for ${upcomingSubs.length} subscriptions`);
+                } catch (error) {
+                    console.error(`[NOTIFICATIONS] Error sending notification to user ${userId}:`, error);
+                }
+            }
+        }
+        
+        console.log(`[NOTIFICATIONS] Check completed. Sent ${totalNotifications} notifications.`);
+    } catch (error) {
+        console.error('[NOTIFICATIONS] Error checking upcoming payments:', error);
+    }
+};
+
+// Run notification check every 6 hours
+const NOTIFICATION_CHECK_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+
+// Run immediately on startup (after 1 minute to let bot initialize)
+setTimeout(() => {
+    checkUpcomingPayments();
+}, 60000); // 1 minute delay
+
+// Then run every 6 hours
+setInterval(() => {
+    checkUpcomingPayments();
+}, NOTIFICATION_CHECK_INTERVAL);
+
+console.log(`[NOTIFICATIONS] Notification system started. Will check every ${NOTIFICATION_CHECK_INTERVAL / 1000 / 60 / 60} hours.`);
+
 // Debug info
 console.log('🔍 Debug info:');
 console.log('- TELEGRAM_BOT_TOKEN:', process.env.TELEGRAM_BOT_TOKEN ? `✅ Set (${process.env.TELEGRAM_BOT_TOKEN.substring(0, 10)}...)` : '❌ Missing');
 console.log('- SERVICE_ACCOUNT:', process.env.SERVICE_ACCOUNT ? `✅ Set (${process.env.SERVICE_ACCOUNT.substring(0, 50)}...)` : '❌ Missing');
 console.log('- WEB_APP_URL:', process.env.WEB_APP_URL || 'Using default');
+
+// Health check server for Railway
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+    if (req.url === '/health' || req.url === '/') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ 
+            status: 'ok', 
+            bot: 'running',
+            timestamp: new Date().toISOString()
+        }));
+    } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+    }
+});
+
+server.listen(PORT, () => {
+    console.log(`✅ Health check server listening on port ${PORT}`);
+});
+
+// Handle server errors
+server.on('error', (error) => {
+    console.error('❌ Server error:', error);
+});
 
 console.log('Bot is running...');
