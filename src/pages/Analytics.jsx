@@ -1,5 +1,5 @@
 import React from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
 import { useSubscriptions } from '../context/SubscriptionContext';
@@ -9,21 +9,21 @@ export default function Analytics() {
 
     // Group costs by currency for totals
     const totalsByCurrency = subscriptions.reduce((acc, sub) => {
-        const currency = sub.currencySymbol || '₩';
+        const currency = sub.currencySymbol || '₽';
         acc[currency] = (acc[currency] || 0) + (sub.cost || 0);
         return acc;
     }, {});
 
     // Get the most common currency (primary currency)
     const getPrimaryCurrency = () => {
-        if (subscriptions.length === 0) return '₩';
+        if (subscriptions.length === 0) return '₽';
         const currencyCounts = {};
         subscriptions.forEach(sub => {
-            const currency = sub.currencySymbol || '₩';
+            const currency = sub.currencySymbol || '₽';
             currencyCounts[currency] = (currencyCounts[currency] || 0) + 1;
         });
         const primaryCurrency = Object.entries(currencyCounts)
-            .sort((a, b) => b[1] - a[1])[0]?.[0] || '₩';
+            .sort((a, b) => b[1] - a[1])[0]?.[0] || '₽';
         return primaryCurrency;
     };
 
@@ -282,29 +282,33 @@ export default function Analytics() {
 
                 <Card className="bg-surface border-white/5 p-4">
                     <h3 className="text-sm font-bold text-white mb-4">Расходы по месяцам</h3>
-                    <div className="h-48 w-full">
+                    <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyData} margin={{ top: 10, right: 5, left: 5, bottom: 45 }}>
+                            <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+                                <CartesianGrid 
+                                    strokeDasharray="3 3" 
+                                    stroke="rgba(255,255,255,0.1)" 
+                                    vertical={false}
+                                />
                                 <XAxis 
                                     dataKey="name" 
-                                    tick={{ fill: '#9CA3AF', fontSize: 9, fontWeight: 500 }} 
-                                    axisLine={false} 
-                                    tickLine={false}
+                                    tick={{ fill: '#9CA3AF', fontSize: 10, fontWeight: 500 }} 
+                                    axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                                    tickLine={{ stroke: 'rgba(255,255,255,0.1)' }}
                                     interval={0}
-                                    angle={-45}
-                                    textAnchor="end"
-                                    height={70}
-                                    tickMargin={5}
-                                    scale="point"
-                                    padding={{ left: 0, right: 0 }}
+                                    angle={0}
+                                    textAnchor="middle"
+                                    height={40}
+                                    tickMargin={8}
                                 />
                                 <YAxis 
-                                    tick={{ fill: '#FFFFFF', fontSize: 9, fontWeight: 500 }} 
-                                    axisLine={false} 
-                                    tickLine={false}
-                                    width={50}
+                                    tick={{ fill: '#FFFFFF', fontSize: 10, fontWeight: 500 }} 
+                                    axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                                    tickLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                                    width={60}
                                     tickFormatter={(value) => {
-                                        // Сокращаем большие числа для компактности на мобильных
+                                        if (value === 0) return '0';
+                                        // Сокращаем большие числа для компактности
                                         if (value >= 1000000) {
                                             return `${primaryCurrency}${(value / 1000000).toFixed(1)}M`;
                                         } else if (value >= 1000) {
