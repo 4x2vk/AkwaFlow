@@ -391,19 +391,7 @@ bot.onText(/\/start/, async (msg) => {
     bot.sendMessage(chatId, message);
 });
 
-// Handle text messages
-bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text;
-
-    // Skip commands, voice messages, and other types
-    if (!text || text.startsWith('/')) return;
-    if (msg.voice) return; // Voice messages are handled separately
-
-    await processTextCommand(chatId, text);
-});
-
-// Voice message handler with speech recognition
+// Voice message handler with speech recognition - MUST be registered BEFORE 'message' handler
 bot.on('voice', async (msg) => {
     const chatId = msg.chat.id;
     const voice = msg.voice;
@@ -482,6 +470,18 @@ bot.on('voice', async (msg) => {
         const errorMessage = error.message || 'Неизвестная ошибка';
         bot.sendMessage(chatId, `❌ Ошибка при обработке голосового сообщения: ${errorMessage}. Попробуйте написать текстом.`);
     }
+});
+
+// Handle text messages - registered AFTER voice handler
+bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
+
+    // Skip commands, voice messages, and other types
+    if (!text || text.startsWith('/')) return;
+    if (msg.voice) return; // Voice messages are handled separately
+
+    await processTextCommand(chatId, text);
 });
 
 // Notification system - check for upcoming payments
