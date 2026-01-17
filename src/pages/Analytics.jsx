@@ -86,41 +86,43 @@ export default function Analytics() {
                 const paymentMonth = paymentDate.getMonth();
                 const paymentYear = paymentDate.getFullYear();
                 
-                // Add to the month when payment occurs (current or next year)
-                if (paymentYear === currentYear && paymentMonth < 12) {
-                    months[paymentMonth].cost += cost;
-                } else if (paymentYear === currentYear + 1 && paymentMonth < 12) {
+                // Only add to months that have already passed or are current month
+                // Payment must be in current year and month must be <= currentMonth
+                if (paymentYear === currentYear && paymentMonth <= currentMonth) {
                     months[paymentMonth].cost += cost;
                 }
             } else {
                 // For monthly subscriptions - calculate based on payment day
                 const paymentDay = paymentDate.getDate();
                 
-                // Start from nextPaymentDate
+                // Start from the original payment date
                 let currentPaymentDate = new Date(paymentDate);
                 
-                // If payment date is in the past, move to next occurrence
-                while (currentPaymentDate < now) {
+                // Find the first payment date in the current year
+                // Move payment date to current year if needed
+                while (currentPaymentDate.getFullYear() < currentYear) {
                     currentPaymentDate = new Date(currentPaymentDate.getFullYear(), currentPaymentDate.getMonth() + 1, paymentDay);
                 }
                 
-                // For monthly subscriptions, add cost to each month of current year
-                // where payment will occur (based on payment day)
-                for (let month = 0; month < 12; month++) {
-                    // Calculate payment date for this month
-                    const monthPaymentDate = new Date(currentYear, month, paymentDay);
-                    
-                    // If currentPaymentDate is in current year, only add for months >= currentPaymentDate
-                    // If currentPaymentDate is in next year, add for all months of current year
-                    if (currentPaymentDate.getFullYear() === currentYear) {
-                        // Payment is in current year - add for months from payment month onwards
-                        if (month >= currentPaymentDate.getMonth()) {
-                            months[month].cost += cost;
-                        }
-                    } else if (currentPaymentDate.getFullYear() > currentYear) {
-                        // Payment is in next year - add for all months of current year
-                        months[month].cost += cost;
-                    }
+                // If payment is in next year, skip this subscription for current year
+                if (currentPaymentDate.getFullYear() > currentYear) {
+                    return;
+                }
+                
+                // Calculate all payments from start of year up to current month
+                let paymentIterator = new Date(currentYear, 0, paymentDay);
+                
+                // If subscription started mid-year, start from the actual first payment
+                if (currentPaymentDate.getMonth() > 0 || (currentPaymentDate.getMonth() === 0 && currentPaymentDate.getDate() !== paymentDay)) {
+                    paymentIterator = new Date(currentPaymentDate);
+                }
+                
+                // Add cost for each month from first payment to current month
+                while (paymentIterator.getFullYear() === currentYear && paymentIterator.getMonth() <= currentMonth) {
+                    const monthIndex = paymentIterator.getMonth();
+                    months[monthIndex].cost += cost;
+                    // Move to next month
+                    paymentIterator = new Date(paymentIterator.getFullYear(), paymentIterator.getMonth() + 1, paymentDay);
                 }
             }
         });
