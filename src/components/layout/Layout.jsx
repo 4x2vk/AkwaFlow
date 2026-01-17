@@ -63,15 +63,6 @@ export function Layout({ children }) {
             </main>
 
             <BottomNav />
-            <BottomNav />
-            <div className="text-[10px] text-center pb-24 text-gray-400 break-all px-4">
-                User ID: {user?.uid || 'null'} <br />
-                TG: {typeof window.Telegram !== 'undefined' ? 'OK' : 'MISS'} |
-                WA: {window.Telegram?.WebApp ? 'OK' : 'MISS'} |
-                User: {window.Telegram?.WebApp?.initDataUnsafe?.user ? 'OK' : 'MISS'} <br />
-                initData: {window.Telegram?.WebApp?.initData ? 'exists' : 'missing'} <br />
-                Expected: 993211663 (from bot chatId)
-            </div>
         </div>
     );
 }

@@ -275,7 +275,7 @@ const processTextCommand = async (chatId, text) => {
                 cycle: cycle,
                 nextPaymentDate: date,
                 category: 'Общие',
-                color: '#00D68F',
+                color: '#a78bfa',
                 icon: name[0].toUpperCase(),
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             };

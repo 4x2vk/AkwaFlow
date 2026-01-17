@@ -14,7 +14,7 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
         currency: 'RUB',
         date: '',
         category: 'Общие',
-        color: '#00D68F',
+        color: '#a78bfa',
         billingPeriod: 'monthly' // 'monthly' or 'yearly'
     });
 
@@ -58,7 +58,7 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
                 currency: 'RUB',
                 date: '',
                 category: 'Общие',
-                color: '#00D68F',
+                color: '#a78bfa',
                 billingPeriod: 'monthly'
             });
         }
@@ -107,7 +107,7 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
             billingPeriod: formData.billingPeriod,
             nextPaymentDate: formData.date,
             category: formData.category,
-            // Use category color if available, else default green/form color
+            // Use category color if available, else default purple/form color
             color: selectedCat?.color || formData.color,
             icon: iconText,
             iconUrl: iconUrl // Сохраняем URL иконки

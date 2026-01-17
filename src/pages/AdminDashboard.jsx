@@ -34,7 +34,7 @@ export default function AdminDashboard() {
     }, [adminStats]);
 
     const pieData = adminStats ? [
-        { name: 'Активные', value: adminStats.activeUsers, color: '#00D68F' },
+        { name: 'Активные', value: adminStats.activeUsers, color: '#a78bfa' },
         { name: 'Неактивные', value: adminStats.inactiveUsers, color: '#6B7280' }
     ].filter(item => item.value > 0) : []; // Фильтруем нулевые значения для лучшего отображения
 
@@ -107,9 +107,9 @@ export default function AdminDashboard() {
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-xs text-text-secondary mb-1">Активные (7 дней)</p>
-                                <p className="text-2xl font-bold text-green-400">{adminStats?.activeUsers || 0}</p>
+                                <p className="text-2xl font-bold text-primary">{adminStats?.activeUsers || 0}</p>
                             </div>
-                            <UserCheck className="w-8 h-8 text-green-400" />
+                            <UserCheck className="w-8 h-8 text-primary" />
                         </div>
                     </Card>
 
@@ -217,8 +217,8 @@ export default function AdminDashboard() {
                                 >
                                     <defs>
                                         <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#00D68F" stopOpacity={0.3}/>
-                                            <stop offset="95%" stopColor="#00D68F" stopOpacity={0}/>
+                                            <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.3}/>
+                                            <stop offset="95%" stopColor="#a78bfa" stopOpacity={0}/>
                                         </linearGradient>
                                         <linearGradient id="colorSubscriptions" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3}/>
@@ -267,15 +267,15 @@ export default function AdminDashboard() {
                                             return [value, labels[name] || name];
                                         }}
                                         separator=": "
-                                        cursor={{ stroke: '#00D68F', strokeWidth: 1, strokeDasharray: '3 3' }}
+                                        cursor={{ stroke: '#a78bfa', strokeWidth: 1, strokeDasharray: '3 3' }}
                                     />
                                     <Line 
                                         type="monotone" 
                                         dataKey="users" 
-                                        stroke="#00D68F" 
+                                        stroke="#a78bfa" 
                                         strokeWidth={2.5}
-                                        dot={{ fill: '#00D68F', r: 3, strokeWidth: 2, stroke: '#1E1E1E' }}
-                                        activeDot={{ r: 5, stroke: '#00D68F', strokeWidth: 2 }}
+                                        dot={{ fill: '#a78bfa', r: 3, strokeWidth: 2, stroke: '#1E1E1E' }}
+                                        activeDot={{ r: 5, stroke: '#a78bfa', strokeWidth: 2 }}
                                         name="users"
                                     />
                                     <Line 
@@ -320,7 +320,7 @@ export default function AdminDashboard() {
                                 className="flex items-center justify-between p-3 bg-surface-hover rounded-lg border border-white/5"
                             >
                                 <div className="flex items-center gap-3">
-                                    <div className={`w-3 h-3 rounded-full ${user.isActive ? 'bg-green-400' : 'bg-gray-500'}`} />
+                                    <div className={`w-3 h-3 rounded-full ${user.isActive ? 'bg-primary' : 'bg-gray-500'}`} />
                                     <div>
                                         <p className="text-sm font-medium text-white">ID: {user.telegramId || user.id}</p>
                                         <p className="text-xs text-text-secondary">

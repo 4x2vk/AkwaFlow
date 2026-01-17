@@ -9,7 +9,7 @@ export function CategoryModal({ isOpen, onClose, initialData = null }) {
     const { addCategory, updateCategory } = useSubscriptions();
     const [formData, setFormData] = useState({
         name: '',
-        color: '#00D68F'
+        color: '#a78bfa'
     });
 
     useEffect(() => {
@@ -64,7 +64,7 @@ export function CategoryModal({ isOpen, onClose, initialData = null }) {
                         <label className="text-sm font-medium text-text-secondary">Цвет</label>
                         <div className="grid grid-cols-5 gap-2">
                             {[
-                                '#00D68F', // Зеленый
+                                '#a78bfa', // Фиолетовый
                                 '#3B82F6', // Синий
                                 '#8B5CF6', // Фиолетовый
                                 '#F59E0B', // Оранжевый
