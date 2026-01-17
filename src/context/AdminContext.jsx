@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, getDoc, doc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 
@@ -9,27 +9,60 @@ export function useAdmin() {
     return useContext(AdminContext);
 }
 
-// Admin IDs - should match bot's ADMIN_IDS
-// In production, this should come from environment variable or Firestore
-const ADMIN_IDS = import.meta.env.VITE_ADMIN_IDS 
-    ? import.meta.env.VITE_ADMIN_IDS.split(',').map(id => id.trim())
+// Admin IDs - loaded from Firestore or environment variable
+// Priority: 1) Firestore config, 2) VITE_ADMIN_IDS env var, 3) Empty array
+let ADMIN_IDS = import.meta.env.VITE_ADMIN_IDS
+    ? import.meta.env.VITE_ADMIN_IDS.split(',').map(id => id.trim()).filter(id => id.length > 0)
     : [];
+
+// Debug logging
+console.log('[ADMIN] ==========================================');
+console.log('[ADMIN] VITE_ADMIN_IDS from env:', import.meta.env.VITE_ADMIN_IDS);
+console.log('[ADMIN] Initial Admin IDs:', ADMIN_IDS);
+console.log('[ADMIN] ==========================================');
 
 export function AdminProvider({ children }) {
     const { user } = useAuth();
     const [isAdmin, setIsAdmin] = useState(false);
     const [adminStats, setAdminStats] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [adminIds, setAdminIds] = useState(ADMIN_IDS);
+
+    // Load admin IDs from Firestore config (if exists)
+    useEffect(() => {
+        const loadAdminIds = async () => {
+            try {
+                const configDoc = await getDoc(doc(db, 'config', 'admin'));
+                if (configDoc.exists()) {
+                    const configData = configDoc.data();
+                    if (configData.adminIds && Array.isArray(configData.adminIds)) {
+                        const firestoreAdminIds = configData.adminIds.map(id => String(id));
+                        console.log('[ADMIN] Loaded admin IDs from Firestore:', firestoreAdminIds);
+                        setAdminIds(firestoreAdminIds);
+                        return;
+                    }
+                }
+                console.log('[ADMIN] No admin config in Firestore, using env vars');
+            } catch (error) {
+                console.warn('[ADMIN] Error loading admin config from Firestore:', error);
+                console.log('[ADMIN] Using env vars as fallback');
+            }
+        };
+        loadAdminIds();
+    }, []);
 
     useEffect(() => {
         if (user?.uid) {
-            const userIsAdmin = ADMIN_IDS.includes(String(user.uid));
+            const userIsAdmin = adminIds.includes(String(user.uid));
+            console.log('[ADMIN] Checking admin status for user:', user.uid);
+            console.log('[ADMIN] Admin IDs list:', adminIds);
+            console.log('[ADMIN] Is admin:', userIsAdmin);
             setIsAdmin(userIsAdmin);
         } else {
             setIsAdmin(false);
         }
         setLoading(false);
-    }, [user]);
+    }, [user, adminIds]);
 
     const fetchAdminStats = async () => {
         if (!isAdmin) {

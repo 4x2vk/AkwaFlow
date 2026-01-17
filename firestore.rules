@@ -17,6 +17,12 @@ service cloud.firestore {
       }
     }
     
+    // Config collection - allow read for all (admin config)
+    match /config/{document} {
+      allow read: if true;
+      allow write: if true; // In production, restrict this to admins only
+    }
+    
     // Fallback: allow all other documents (for backward compatibility)
     match /{document=**} {
       allow read, write: if true;
