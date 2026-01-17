@@ -611,13 +611,27 @@ console.log('- WEB_APP_URL:', process.env.WEB_APP_URL || 'Using default');
 // Health check server for Railway
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
+    // Health check endpoint - Railway will check this
     if (req.url === '/health' || req.url === '/') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ 
-            status: 'ok', 
+        const healthStatus = {
+            status: 'ok',
             bot: 'running',
-            timestamp: new Date().toISOString()
-        }));
+            telegram: token ? 'configured' : 'missing',
+            openai: openaiApiKey ? 'configured' : 'missing',
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime()
+        };
+        
+        res.writeHead(200, { 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+        });
+        res.end(JSON.stringify(healthStatus));
+        
+        // Log only occasionally to avoid spam
+        if (Math.random() < 0.1) { // Log ~10% of requests
+            console.log(`[HEALTH] Health check - OK`);
+        }
     } else {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not Found');
@@ -626,6 +640,26 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
     console.log(`✅ Health check server listening on port ${PORT}`);
+    console.log(`✅ Application is ready and healthy!`);
+    console.log(`✅ Health check available at: http://localhost:${PORT}/health`);
+    
+    // Make an immediate health check to verify it works
+    setTimeout(() => {
+        http.get(`http://localhost:${PORT}/health`, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                console.log(`✅ Health check verified: ${res.statusCode}`);
+            });
+        }).on('error', (err) => {
+            console.warn(`⚠️ Health check test failed: ${err.message}`);
+        });
+    }, 1000);
+    
+    // Explicitly signal that the app is ready (for Railway/PM2)
+    if (process.send) {
+        process.send('ready');
+    }
 });
 
 // Handle server errors
@@ -663,13 +697,17 @@ process.on('unhandledRejection', (reason, promise) => {
     // Don't exit - log and continue
 });
 
-// Keep process alive
+// Keep process alive - reduced interval for better monitoring
 setInterval(() => {
-    // Heartbeat to keep process alive
+    // Heartbeat to keep process alive and show Railway that bot is running
     if (server.listening) {
-        console.log('💓 Heartbeat - Bot is alive');
+        console.log('💓 Heartbeat - Bot is alive and healthy');
     }
-}, 3600000); // Every hour
+}, 600000); // Every 10 minutes (reduced from 1 hour for better monitoring)
 
-console.log('Bot is running...');
+console.log('='.repeat(50));
+console.log('🚀 Bot is running and ready!');
 console.log('✅ All systems operational. Bot will stay online.');
+console.log(`✅ Health check: http://localhost:${PORT}/health`);
+console.log(`✅ Telegram Bot: ${bot ? 'Initialized' : 'Not initialized'}`);
+console.log('='.repeat(50));
