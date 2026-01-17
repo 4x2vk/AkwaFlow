@@ -43,9 +43,12 @@ export function AuthProvider({ children }) {
         }
 
         // 3. Fallback: Get UID from URL query parameter (For direct links)
-        if (!uid) {
+        // ⚠️ SECURITY: This is a security risk - removed for production
+        // Only allow in development mode
+        if (!uid && process.env.NODE_ENV === 'development') {
             uid = searchParams.get('uid');
             if (uid) {
+                console.warn('[AUTH] ⚠️ SECURITY WARNING: Using UID from URL parameter (development only)');
                 console.log('[AUTH] User ID from URL parameter:', uid);
             }
         }
