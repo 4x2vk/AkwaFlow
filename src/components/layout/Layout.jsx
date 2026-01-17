@@ -14,14 +14,14 @@ export function Layout({ children }) {
             <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-white/5">
                 <div className="max-w-md mx-auto px-4 h-14 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden ring-1 ring-white/10">
                             {logoError ? (
-                                <div className="w-full h-full bg-gradient-to-br from-purple-600 via-pink-500 to-amber-400 rounded-lg"></div>
+                                <div className="w-full h-full bg-gradient-to-br from-purple-600 via-pink-500 to-amber-400 rounded-full"></div>
                             ) : (
                                 <img 
                                     src="/akwaflow-logo.png" 
                                     alt="AkwaFlow" 
-                                    className="w-full h-full object-cover"
+                                    className="w-full h-full object-cover rounded-full"
                                     onError={() => setLogoError(true)}
                                 />
                             )}
