@@ -45,6 +45,15 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 const webAppUrl = process.env.WEB_APP_URL || 'https://akwaflow-manager-v1.web.app';
 const openaiApiKey = process.env.OPENAI_API_KEY;
 
+// Admin IDs - comma-separated list of Telegram user IDs who can send broadcasts
+// Example: ADMIN_IDS=123456789,987654321
+const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',').map(id => id.trim()) : [];
+
+// Check if user is admin
+const isAdmin = (userId) => {
+    return adminIds.includes(String(userId));
+};
+
 if (!token) {
     console.error("❌ CRTICAL ERROR: TELEGRAM_BOT_TOKEN is missing provided!");
     console.error("Please set TELEGRAM_BOT_TOKEN environment variable");
@@ -391,6 +400,41 @@ bot.onText(/\/start/, async (msg) => {
     bot.sendMessage(chatId, message);
 });
 
+// Admin command: /broadcast <message> - Send message to all users
+bot.onText(/\/broadcast\s+(.+)/s, async (msg, match) => {
+    const chatId = msg.chat.id;
+    
+    // Check if user is admin
+    if (!isAdmin(chatId)) {
+        bot.sendMessage(chatId, '❌ У вас нет прав для выполнения этой команды.');
+        return;
+    }
+    
+    const message = match[1].trim();
+    
+    if (!message) {
+        bot.sendMessage(chatId, '❌ Пожалуйста, укажите сообщение для рассылки.\n\nПример: /broadcast Привет! Новая функция доступна! 🎉');
+        return;
+    }
+    
+    // Confirm before sending
+    bot.sendMessage(chatId, `📢 Начинаю рассылку сообщения всем пользователям...\n\nСообщение:\n"${message}"`);
+    
+    try {
+        const result = await broadcastToAllUsers(message, { parse_mode: 'Markdown' });
+        
+        bot.sendMessage(chatId, 
+            `✅ Рассылка завершена!\n\n` +
+            `✅ Отправлено: ${result.successCount} пользователям\n` +
+            `❌ Ошибок: ${result.errorCount}\n\n` +
+            (result.errors.length > 0 ? `Ошибки:\n${result.errors.slice(0, 5).map(e => `• ${e.userId}: ${e.error}`).join('\n')}` : '')
+        );
+    } catch (error) {
+        console.error('[BROADCAST] Error in broadcast command:', error);
+        bot.sendMessage(chatId, `❌ Ошибка при рассылке: ${error.message}`);
+    }
+});
+
 // Voice message handler with speech recognition - MUST be registered BEFORE 'message' handler
 bot.on('voice', async (msg) => {
     const chatId = msg.chat.id;
@@ -483,6 +527,46 @@ bot.on('message', async (msg) => {
 
     await processTextCommand(chatId, text);
 });
+
+// Broadcast message to all users (for announcements about new features)
+const broadcastToAllUsers = async (message, options = {}) => {
+    try {
+        console.log('[BROADCAST] Starting broadcast to all users...');
+        const usersSnapshot = await db.collection('users').get();
+        
+        let successCount = 0;
+        let errorCount = 0;
+        const errors = [];
+        
+        for (const userDoc of usersSnapshot.docs) {
+            const userId = userDoc.id;
+            
+            try {
+                await bot.sendMessage(userId, message, options);
+                successCount++;
+                
+                // Small delay to avoid rate limiting
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (error) {
+                errorCount++;
+                errors.push({ userId, error: error.message });
+                
+                // Log specific errors
+                if (error.response && error.response.statusCode === 403) {
+                    console.log(`[BROADCAST] User ${userId} blocked the bot`);
+                } else {
+                    console.error(`[BROADCAST] Error sending to user ${userId}:`, error.message);
+                }
+            }
+        }
+        
+        console.log(`[BROADCAST] Completed: ${successCount} sent, ${errorCount} failed`);
+        return { successCount, errorCount, errors };
+    } catch (error) {
+        console.error('[BROADCAST] Error in broadcast function:', error);
+        throw error;
+    }
+};
 
 // Notification system - check for upcoming payments
 const checkUpcomingPayments = async () => {
@@ -606,6 +690,7 @@ console.log('🔍 Debug info:');
 console.log('- TELEGRAM_BOT_TOKEN:', process.env.TELEGRAM_BOT_TOKEN ? `✅ Set (${process.env.TELEGRAM_BOT_TOKEN.substring(0, 10)}...)` : '❌ Missing');
 console.log('- SERVICE_ACCOUNT:', process.env.SERVICE_ACCOUNT ? `✅ Set (${process.env.SERVICE_ACCOUNT.substring(0, 50)}...)` : '❌ Missing');
 console.log('- OPENAI_API_KEY:', openaiApiKey ? `✅ Set (${openaiApiKey.substring(0, 10)}...)` : '❌ Missing (Voice recognition disabled)');
+console.log('- ADMIN_IDS:', adminIds.length > 0 ? `✅ Set (${adminIds.length} admin(s))` : '❌ Missing (No admins configured)');
 console.log('- WEB_APP_URL:', process.env.WEB_APP_URL || 'Using default');
 
 // Health check server for Railway
