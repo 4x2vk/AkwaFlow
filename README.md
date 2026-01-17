@@ -4,6 +4,10 @@
 
 Hey there! 👋 This is **AkwaFlow** — my take on a subscription management app that actually makes sense. You know that feeling when you're paying for Netflix, Spotify, YouTube Premium, and like 10 other services, but you have no idea how much you're actually spending? Yeah, me too. So I built this.
 
+
+https://github.com/user-attachments/assets/f56be828-ffd7-40b4-805e-a19738458982
+
+
 ---
 
 ## ✨ What's This About?
