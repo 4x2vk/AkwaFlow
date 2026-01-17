@@ -105,8 +105,36 @@ const parseDate = (text) => {
     };
 };
 
-bot.onText(/\/start/, (msg) => {
+// Helper function to ensure user document exists
+const ensureUserExists = async (chatId) => {
+    try {
+        const userDocRef = db.collection('users').doc(String(chatId));
+        const userDoc = await userDocRef.get();
+        
+        if (!userDoc.exists) {
+            // Create user document with metadata
+            await userDocRef.set({
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                lastSeen: admin.firestore.FieldValue.serverTimestamp(),
+                telegramId: String(chatId)
+            });
+            console.log(`[BOT] Created user document for ${chatId}`);
+        } else {
+            // Update lastSeen timestamp
+            await userDocRef.update({
+                lastSeen: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+    } catch (error) {
+        console.error(`[BOT] Error ensuring user exists for ${chatId}:`, error);
+    }
+};
+
+bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
+
+    // Ensure user document exists in Firebase
+    await ensureUserExists(chatId);
 
     // Welcome message as requested
     const message = `Отправьте текстовое или голосовое сообщение:
@@ -125,6 +153,9 @@ bot.on('message', async (msg) => {
     const text = msg.text;
 
     if (!text || text.startsWith('/')) return;
+
+    // Ensure user document exists when they interact
+    await ensureUserExists(chatId);
 
     // 1. ADD Command: "Добавь Netflix за 999 вон 12 числа" OR "Добавь Netflix 999 вон"
     // Regex: "Добавь" <name> [за] <cost> <currency> [date]

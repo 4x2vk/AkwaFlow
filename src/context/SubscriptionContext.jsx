@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { collection, query, onSnapshot, addDoc, deleteDoc, updateDoc, doc, getDocs } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, deleteDoc, updateDoc, doc, getDocs, setDoc, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 
@@ -19,6 +19,31 @@ export function SubscriptionProvider({ children }) {
     // Initial Mock Data removed as per user request
 
 
+    // Helper function to ensure user document exists
+    const ensureUserExists = async (uid) => {
+        try {
+            const userDocRef = doc(db, 'users', uid);
+            const userDoc = await getDoc(userDocRef);
+            
+            if (!userDoc.exists()) {
+                // Create user document with metadata
+                await setDoc(userDocRef, {
+                    createdAt: new Date().toISOString(),
+                    lastSeen: new Date().toISOString(),
+                    telegramId: String(uid)
+                });
+                console.log(`[SUBSCRIPTIONS] Created user document for ${uid}`);
+            } else {
+                // Update lastSeen timestamp
+                await updateDoc(userDocRef, {
+                    lastSeen: new Date().toISOString()
+                });
+            }
+        } catch (error) {
+            console.error(`[SUBSCRIPTIONS] Error ensuring user exists for ${uid}:`, error);
+        }
+    };
+
     useEffect(() => {
         if (!user?.uid) {
             setSubscriptions([]);
@@ -26,6 +51,9 @@ export function SubscriptionProvider({ children }) {
             setLoading(false);
             return;
         }
+
+        // Ensure user document exists when they open the app
+        ensureUserExists(user.uid);
 
         try {
             console.log('[SUBSCRIPTIONS] Setting up Firebase listeners for user:', user.uid);
@@ -185,11 +213,59 @@ export function SubscriptionProvider({ children }) {
     };
 
     const updateCategory = async (id, data) => {
-        if (!user || user.uid === 'demo_user') {
-            setCategories(categories.map(c => c.id === id ? { ...c, ...data } : c));
+        // Find the category being updated to get its name
+        const categoryToUpdate = categories.find(c => c.id === id);
+        if (!categoryToUpdate) {
+            console.error('[CATEGORY] Category not found:', id);
             return;
         }
+
+        const oldCategoryName = categoryToUpdate.name;
+        const newCategoryName = data.name;
+        const newColor = data.color;
+        const categoryNameChanged = newCategoryName && newCategoryName !== oldCategoryName;
+
+        if (!user || user.uid === 'demo_user') {
+            // Update category
+            setCategories(categories.map(c => c.id === id ? { ...c, ...data } : c));
+            
+            // Update all subscriptions with this category
+            setSubscriptions(subscriptions.map(s => {
+                if (s.category === oldCategoryName) {
+                    const updates = {};
+                    if (newColor) updates.color = newColor;
+                    if (categoryNameChanged) updates.category = newCategoryName;
+                    return { ...s, ...updates };
+                }
+                return s;
+            }));
+            return;
+        }
+
+        // Update category in Firestore
         await updateDoc(doc(db, 'users', user.uid, 'categories', id), data);
+
+        // Update all subscriptions with this category
+        const subscriptionsToUpdate = subscriptions.filter(s => s.category === oldCategoryName);
+        
+        if (subscriptionsToUpdate.length > 0) {
+            // Use batch write for efficient updates
+            const batch = writeBatch(db);
+            subscriptionsToUpdate.forEach(sub => {
+                const subRef = doc(db, 'users', user.uid, 'subscriptions', sub.id);
+                const updates = {};
+                if (newColor) updates.color = newColor;
+                if (categoryNameChanged) updates.category = newCategoryName;
+                if (Object.keys(updates).length > 0) {
+                    batch.update(subRef, updates);
+                }
+            });
+            await batch.commit();
+            const updateMessages = [];
+            if (newColor) updateMessages.push('color');
+            if (categoryNameChanged) updateMessages.push('name');
+            console.log(`[CATEGORY] Updated ${updateMessages.join(' and ')} for ${subscriptionsToUpdate.length} subscriptions in category "${oldCategoryName}"`);
+        }
     };
 
     return (
