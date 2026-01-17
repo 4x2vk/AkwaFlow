@@ -280,7 +280,18 @@ const processTextCommand = async (chatId, text) => {
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             };
             
-            console.log(`[BOT] Adding subscription for user ${chatId}:`, subscriptionData);
+            // Базовая валидация данных
+            if (!name || name.length === 0 || name.length > 100) {
+                bot.sendMessage(chatId, '❌ Некорректное название подписки (должно быть от 1 до 100 символов)');
+                return;
+            }
+            if (isNaN(cost) || cost < 0 || cost > 1000000000) {
+                bot.sendMessage(chatId, '❌ Некорректная стоимость (должна быть от 0 до 1,000,000,000)');
+                return;
+            }
+            
+            // Не логируем полные данные для безопасности
+            console.log(`[BOT] Adding subscription for user ${chatId}: name="${name}", cost=${cost}`);
             await userDocRef.collection('subscriptions').add(subscriptionData);
             
             const dateStr = new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
@@ -687,9 +698,10 @@ console.log(`[NOTIFICATIONS] Notification system started. Will check every ${NOT
 
 // Debug info
 console.log('🔍 Debug info:');
-console.log('- TELEGRAM_BOT_TOKEN:', process.env.TELEGRAM_BOT_TOKEN ? `✅ Set (${process.env.TELEGRAM_BOT_TOKEN.substring(0, 10)}...)` : '❌ Missing');
-console.log('- SERVICE_ACCOUNT:', process.env.SERVICE_ACCOUNT ? `✅ Set (${process.env.SERVICE_ACCOUNT.substring(0, 50)}...)` : '❌ Missing');
-console.log('- OPENAI_API_KEY:', openaiApiKey ? `✅ Set (${openaiApiKey.substring(0, 10)}...)` : '❌ Missing (Voice recognition disabled)');
+// Безопасное логирование - не показываем даже части токенов
+console.log('- TELEGRAM_BOT_TOKEN:', process.env.TELEGRAM_BOT_TOKEN ? '✅ Set' : '❌ Missing');
+console.log('- SERVICE_ACCOUNT:', process.env.SERVICE_ACCOUNT ? '✅ Set' : '❌ Missing');
+console.log('- OPENAI_API_KEY:', openaiApiKey ? '✅ Set' : '❌ Missing (Voice recognition disabled)');
 console.log('- ADMIN_IDS:', adminIds.length > 0 ? `✅ Set (${adminIds.length} admin(s))` : '❌ Missing (No admins configured)');
 console.log('- WEB_APP_URL:', process.env.WEB_APP_URL || 'Using default');
 

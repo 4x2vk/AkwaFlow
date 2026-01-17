@@ -5,6 +5,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
 import { getIcon } from '../../services/iconService';
+import { validateAndSanitizeSubscription } from '../../lib/validation';
 
 export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
     const { addSubscription, updateSubscription, categories } = useSubscriptions();
@@ -98,23 +99,32 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
             // Продолжаем без иконки, используем первую букву
         }
 
-        const subData = {
+        // Валидация и санитизация данных
+        const rawData = {
             name: formData.name,
-            cost: Number(formData.cost),
+            cost: formData.cost,
             currency: formData.currency,
             currencySymbol: currencySymbol,
             cycle: cycleText,
             billingPeriod: formData.billingPeriod,
             nextPaymentDate: formData.date,
             category: formData.category,
-            // Use category color if available, else default purple/form color
             color: selectedCat?.color || formData.color,
             icon: iconText,
-            iconUrl: iconUrl // Сохраняем URL иконки
+            iconUrl: iconUrl
         };
 
+        const validation = validateAndSanitizeSubscription(rawData);
+        if (!validation.valid) {
+            alert('Ошибка валидации: ' + validation.errors.join(', '));
+            return;
+        }
+
+        const subData = validation.data;
+
         try {
-            console.log('[MODAL] Submitting subscription data:', subData);
+            // Не логируем полные данные для безопасности
+            console.log('[MODAL] Submitting subscription (name:', subData.name, 'cost:', subData.cost + ')');
             if (initialData) {
                 await updateSubscription(initialData.id, subData);
                 console.log('[MODAL] Subscription updated successfully');
@@ -124,8 +134,9 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
             }
             onClose();
         } catch (error) {
-            console.error('[MODAL] Error saving subscription:', error);
-            alert('Ошибка при сохранении подписки: ' + error.message);
+            console.error('[MODAL] Error saving subscription:', error.code || 'UNKNOWN');
+            // Не показываем детали ошибки пользователю (безопасность)
+            alert('Ошибка при сохранении подписки. Пожалуйста, попробуйте еще раз.');
             // Modal stays open so user can retry
         }
     };

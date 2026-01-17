@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { collection, query, onSnapshot, addDoc, deleteDoc, updateDoc, doc, getDocs, setDoc, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
+import { validateAndSanitizeSubscription } from '../lib/validation';
 
 const SubscriptionContext = createContext();
 
@@ -150,8 +151,8 @@ export function SubscriptionProvider({ children }) {
         }
         
         try {
-            console.log('[SUBSCRIPTIONS] Adding subscription to Firebase for user:', user.uid);
-            console.log('[SUBSCRIPTIONS] Subscription data:', sub);
+            console.log('[SUBSCRIPTIONS] Adding subscription for user:', user.uid);
+            // Не логируем полные данные для безопасности
             
             // Add createdAt timestamp like in bot
             const subscriptionData = {
@@ -173,8 +174,8 @@ export function SubscriptionProvider({ children }) {
             console.error('[SUBSCRIPTIONS] Error message:', error.message);
             console.error('[SUBSCRIPTIONS] Full error:', error);
             
-            // Show error to user (you might want to add a toast notification here)
-            alert('Ошибка при добавлении подписки: ' + error.message);
+            // Show error to user (не раскрываем детали ошибки)
+            alert('Ошибка при добавлении подписки. Пожалуйста, попробуйте еще раз.');
             throw error; // Re-throw so caller can handle it
         }
     };
@@ -184,7 +185,23 @@ export function SubscriptionProvider({ children }) {
             setSubscriptions(subscriptions.filter(s => s.id !== id));
             return;
         }
-        await deleteDoc(doc(db, 'users', user.uid, 'subscriptions', id));
+        
+        // Проверка: убеждаемся, что подписка принадлежит текущему пользователю
+        const subscription = subscriptions.find(s => s.id === id);
+        if (!subscription) {
+            console.error('[SUBSCRIPTIONS] Subscription not found:', id);
+            alert('Подписка не найдена');
+            return;
+        }
+        
+        // Дополнительная проверка безопасности
+        const subscriptionRef = doc(db, 'users', user.uid, 'subscriptions', id);
+        try {
+            await deleteDoc(subscriptionRef);
+        } catch (error) {
+            console.error('[SUBSCRIPTIONS] Error deleting subscription:', error);
+            alert('Ошибка при удалении подписки');
+        }
     };
 
     const addCategory = async (cat) => {
@@ -209,7 +226,27 @@ export function SubscriptionProvider({ children }) {
             setSubscriptions(subscriptions.map(s => s.id === id ? { ...s, ...data } : s));
             return;
         }
-        await updateDoc(doc(db, 'users', user.uid, 'subscriptions', id), data);
+        
+        // Проверка: убеждаемся, что подписка принадлежит текущему пользователю
+        const subscription = subscriptions.find(s => s.id === id);
+        if (!subscription) {
+            console.error('[SUBSCRIPTIONS] Subscription not found:', id);
+            alert('Подписка не найдена');
+            return;
+        }
+        
+        // Валидация данных перед обновлением
+        try {
+            const validation = validateAndSanitizeSubscription(data);
+            if (!validation.valid) {
+                alert('Ошибка валидации: ' + validation.errors.join(', '));
+                return;
+            }
+            await updateDoc(doc(db, 'users', user.uid, 'subscriptions', id), validation.data);
+        } catch (error) {
+            console.error('[SUBSCRIPTIONS] Error updating subscription:', error.code || 'UNKNOWN');
+            alert('Ошибка при обновлении подписки');
+        }
     };
 
     const updateCategory = async (id, data) => {
