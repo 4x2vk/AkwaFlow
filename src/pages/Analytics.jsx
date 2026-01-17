@@ -282,19 +282,19 @@ export default function Analytics() {
 
                 <Card className="bg-surface border-white/5 p-4">
                     <h3 className="text-sm font-bold text-white mb-4">Расходы по месяцам</h3>
-                    <div className="h-48 w-full">
+                    <div className="h-48 w-full -mx-2 px-2">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: 20, bottom: 35 }}>
+                            <BarChart data={monthlyData} margin={{ top: 15, right: 20, left: 20, bottom: 45 }}>
                                 <XAxis 
                                     dataKey="name" 
-                                    tick={{ fill: '#9CA3AF', fontSize: 10, fontWeight: 500 }} 
+                                    tick={{ fill: '#9CA3AF', fontSize: 9, fontWeight: 500 }} 
                                     axisLine={false} 
                                     tickLine={false}
                                     interval={0}
                                     angle={-45}
                                     textAnchor="end"
-                                    height={60}
-                                    tickMargin={8}
+                                    height={70}
+                                    tickMargin={5}
                                 />
                                 <YAxis 
                                     tick={{ fill: '#FFFFFF', fontSize: 10, fontWeight: 500 }} 
