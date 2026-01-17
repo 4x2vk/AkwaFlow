@@ -169,7 +169,7 @@ const transcribeAudio = async (audioFilePath) => {
         // Get filename with proper extension
         const fileName = path.basename(audioFilePath);
         
-        // Read file as buffer instead of stream for better compatibility
+        // Read file as buffer
         const audioBuffer = fs.readFileSync(audioFilePath);
         
         // OpenAI Whisper requires filename with extension
@@ -184,23 +184,56 @@ const transcribeAudio = async (audioFilePath) => {
 
         console.log(`[BOT] Sending audio file to OpenAI: ${fileName} (${audioBuffer.length} bytes)`);
 
-        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${openaiApiKey}`,
-                ...form.getHeaders()
-            },
-            body: form
+        // Use https module directly instead of fetch for better form-data compatibility
+        return new Promise((resolve, reject) => {
+            const options = {
+                hostname: 'api.openai.com',
+                path: '/v1/audio/transcriptions',
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${openaiApiKey}`,
+                    ...form.getHeaders()
+                }
+            };
+
+            const req = https.request(options, (res) => {
+                let responseData = '';
+
+                res.on('data', (chunk) => {
+                    responseData += chunk;
+                });
+
+                res.on('end', () => {
+                    if (res.statusCode !== 200) {
+                        console.error(`[BOT] OpenAI API error response: ${responseData}`);
+                        reject(new Error(`OpenAI API error: ${res.statusCode} - ${responseData}`));
+                        return;
+                    }
+
+                    try {
+                        const result = JSON.parse(responseData);
+                        resolve(result.text);
+                    } catch (parseError) {
+                        console.error('[BOT] Error parsing OpenAI response:', parseError);
+                        reject(new Error('Failed to parse OpenAI response'));
+                    }
+                });
+            });
+
+            req.on('error', (error) => {
+                console.error('[BOT] Request error:', error);
+                reject(error);
+            });
+
+            // Pipe form data to request
+            form.pipe(req);
+            
+            // Handle form errors
+            form.on('error', (error) => {
+                console.error('[BOT] Form data error:', error);
+                reject(error);
+            });
         });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[BOT] OpenAI API error response: ${errorText}`);
-            throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-        }
-
-        const result = await response.json();
-        return result.text;
     } catch (error) {
         console.error('[BOT] Error transcribing audio:', error);
         throw error;
