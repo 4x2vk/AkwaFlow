@@ -284,7 +284,7 @@ export default function Analytics() {
                     <h3 className="text-sm font-bold text-white mb-4">Расходы по месяцам</h3>
                     <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
+                            <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
                                 <CartesianGrid 
                                     strokeDasharray="3 3" 
                                     stroke="rgba(255,255,255,0.1)" 
