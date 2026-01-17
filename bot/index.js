@@ -54,8 +54,17 @@ if (!token) {
 
 let bot;
 try {
-    bot = new TelegramBot(token, { polling: true });
-    console.log('✅ Telegram Bot initialized');
+    // Only enable polling in production (Railway/server)
+    // Set ENABLE_POLLING=true in environment to force polling
+    const enablePolling = process.env.ENABLE_POLLING === 'true' || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+    
+    if (enablePolling) {
+        bot = new TelegramBot(token, { polling: true });
+        console.log('✅ Telegram Bot initialized with polling');
+    } else {
+        bot = new TelegramBot(token, { polling: false });
+        console.log('✅ Telegram Bot initialized (polling disabled - use webhook or set ENABLE_POLLING=true)');
+    }
 } catch (error) {
     console.error('❌ Error initializing Telegram Bot:', error);
     process.exit(1);
