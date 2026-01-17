@@ -165,11 +165,24 @@ const transcribeAudio = async (audioFilePath) => {
     try {
         const FormData = (await import('form-data')).default;
         const form = new FormData();
-        const audioFile = fs.createReadStream(audioFilePath);
         
-        form.append('file', audioFile);
+        // Get filename with proper extension
+        const fileName = path.basename(audioFilePath);
+        
+        // Read file as buffer instead of stream for better compatibility
+        const audioBuffer = fs.readFileSync(audioFilePath);
+        
+        // OpenAI Whisper requires filename with extension
+        // Telegram sends .ogg files, which OpenAI supports
+        form.append('file', audioBuffer, {
+            filename: fileName,
+            contentType: 'audio/ogg',
+            knownLength: audioBuffer.length
+        });
         form.append('model', 'whisper-1');
         form.append('language', 'ru'); // Russian language
+
+        console.log(`[BOT] Sending audio file to OpenAI: ${fileName} (${audioBuffer.length} bytes)`);
 
         const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
             method: 'POST',
@@ -182,6 +195,7 @@ const transcribeAudio = async (audioFilePath) => {
 
         if (!response.ok) {
             const errorText = await response.text();
+            console.error(`[BOT] OpenAI API error response: ${errorText}`);
             throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
         }
 
