@@ -245,7 +245,19 @@ export default function Analytics() {
                                         border: '1px solid rgba(255,255,255,0.1)', 
                                         borderRadius: '8px',
                                         padding: '8px 12px',
-                                        boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
+                                        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+                                        color: '#FFFFFF'
+                                    }}
+                                    labelStyle={{ 
+                                        color: '#FFFFFF', 
+                                        fontSize: '12px',
+                                        marginBottom: '4px',
+                                        fontWeight: 'bold'
+                                    }}
+                                    itemStyle={{ 
+                                        color: '#FFFFFF', 
+                                        fontSize: '12px',
+                                        padding: '2px 0'
                                     }}
                                     formatter={(value, name) => {
                                         return [`${primaryCurrency}${value.toLocaleString()}`, name];
@@ -272,7 +284,7 @@ export default function Analytics() {
                     <h3 className="text-sm font-bold text-white mb-4">Расходы по месяцам</h3>
                     <div className="h-48 w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: 20, bottom: 35 }}>
+                            <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: 20, bottom: 35 }}>
                                 <XAxis 
                                     dataKey="name" 
                                     tick={{ fill: '#9CA3AF', fontSize: 10, fontWeight: 500 }} 
