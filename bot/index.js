@@ -2,7 +2,15 @@ import TelegramBot from 'node-telegram-bot-api';
 import admin from 'firebase-admin';
 import { createRequire } from 'module';
 import http from 'http';
+import fs from 'fs';
+import https from 'https';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
 const require = createRequire(import.meta.url);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Initialize Firebase Admin
 let serviceAccount;
@@ -35,6 +43,7 @@ const db = admin.firestore();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const webAppUrl = process.env.WEB_APP_URL || 'https://akwaflow-manager-v1.web.app';
+const openaiApiKey = process.env.OPENAI_API_KEY;
 
 if (!token) {
     console.error("❌ CRTICAL ERROR: TELEGRAM_BOT_TOKEN is missing provided!");
@@ -105,6 +114,185 @@ const parseDate = (text) => {
     };
 };
 
+// Function to download audio file from Telegram
+const downloadAudioFile = async (fileId) => {
+    try {
+        const file = await bot.getFile(fileId);
+        const filePath = file.file_path;
+        const url = `https://api.telegram.org/file/bot${token}/${filePath}`;
+        
+        const tempDir = path.join(__dirname, 'temp');
+        if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+        }
+        
+        const localFilePath = path.join(tempDir, `${fileId}.ogg`);
+        
+        return new Promise((resolve, reject) => {
+            const fileStream = fs.createWriteStream(localFilePath);
+            https.get(url, (response) => {
+                response.pipe(fileStream);
+                fileStream.on('finish', () => {
+                    fileStream.close();
+                    resolve(localFilePath);
+                });
+            }).on('error', (err) => {
+                fs.unlinkSync(localFilePath).catch(() => {});
+                reject(err);
+            });
+        });
+    } catch (error) {
+        console.error('[BOT] Error downloading audio file:', error);
+        throw error;
+    }
+};
+
+// Function to transcribe audio using OpenAI Whisper API
+const transcribeAudio = async (audioFilePath) => {
+    if (!openaiApiKey) {
+        throw new Error('OPENAI_API_KEY is not set. Please set it in environment variables.');
+    }
+
+    try {
+        const FormData = (await import('form-data')).default;
+        const form = new FormData();
+        const audioFile = fs.createReadStream(audioFilePath);
+        
+        form.append('file', audioFile);
+        form.append('model', 'whisper-1');
+        form.append('language', 'ru'); // Russian language
+
+        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${openaiApiKey}`,
+                ...form.getHeaders()
+            },
+            body: form
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+        }
+
+        const result = await response.json();
+        return result.text;
+    } catch (error) {
+        console.error('[BOT] Error transcribing audio:', error);
+        throw error;
+    }
+};
+
+// Common function to process text commands (extracted from message handler)
+const processTextCommand = async (chatId, text) => {
+    // Ensure user document exists when they interact
+    await ensureUserExists(chatId);
+
+    // 1. ADD Command: "Добавь Netflix за 999 вон 12 числа" OR "Добавь Netflix 999 вон"
+    const addMatch = text.match(/(?:Добавь|Add)\s+(.+?)\s+(?:за|for)?\s*(\d+(?:[.,]\d+)?)\s*(.+)/i);
+
+    if (addMatch) {
+        const name = addMatch[1].trim();
+        const cost = parseFloat(addMatch[2].replace(',', '.'));
+        const restOfText = addMatch[3].trim();
+        
+        const { code, symbol } = detectCurrency(restOfText);
+        const { date, cycle } = parseDate(restOfText);
+
+        try {
+            const userDocRef = db.collection('users').doc(String(chatId));
+            const subscriptionData = {
+                name,
+                cost,
+                currency: code,
+                currencySymbol: symbol,
+                cycle: cycle,
+                nextPaymentDate: date,
+                category: 'Общие',
+                color: '#00D68F',
+                icon: name[0].toUpperCase(),
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+            
+            console.log(`[BOT] Adding subscription for user ${chatId}:`, subscriptionData);
+            await userDocRef.collection('subscriptions').add(subscriptionData);
+            
+            const dateStr = new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+            bot.sendMessage(chatId, `✅ Добавлено: ${name} (${symbol}${cost}), следующий платеж: ${dateStr}`);
+            return;
+        } catch (e) {
+            console.error('[BOT] Error adding subscription:', e);
+            bot.sendMessage(chatId, '❌ Ошибка при добавлении в базу данных.');
+            return;
+        }
+    }
+
+    // 2. REMOVE Command: "Удали Spotify"
+    const removeMatch = text.match(/(?:Удали|Удалить|Remove|Delete)\s+(.+)/i);
+    if (removeMatch) {
+        const nameToRemove = removeMatch[1].trim();
+        try {
+            const snapshot = await db.collection('users').doc(String(chatId)).collection('subscriptions')
+                .where('name', '==', nameToRemove)
+                .get();
+
+            if (snapshot.empty) {
+                bot.sendMessage(chatId, `⚠️ Подписка "${nameToRemove}" не найдена. Проверьте название в списке "Мои подписки".`);
+                return;
+            }
+
+            const batch = db.batch();
+            snapshot.docs.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+            await batch.commit();
+
+            bot.sendMessage(chatId, `🗑️ Удалено: ${nameToRemove}`);
+            return;
+        } catch (e) {
+            console.error(e);
+            bot.sendMessage(chatId, '❌ Ошибка при удалении.');
+            return;
+        }
+    }
+
+    // 3. LIST Command: "Мои подписки"
+    if (text.match(/(?:Мои подписки|Список|List)/i)) {
+        try {
+            const snapshot = await db.collection('users').doc(String(chatId)).collection('subscriptions').get();
+
+            if (snapshot.empty) {
+                bot.sendMessage(chatId, 'У вас пока нет активных подписок.');
+                return;
+            }
+
+            let response = '📋 *Ваши подписки:*\n\n';
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                const sym = data.currencySymbol || '₩';
+                response += `• *${data.name}*: ${sym}${data.cost}\n`;
+            });
+
+            bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
+            return;
+        } catch (e) {
+            console.error(e);
+            bot.sendMessage(chatId, '❌ Ошибка получения списка.');
+            return;
+        }
+    }
+
+    // 4. Greetings
+    if (text.match(/(?:Привет|Hello|Hi|Start)/i)) {
+        bot.sendMessage(chatId, `Привет! 👋 Я готов управлять твоими подписками.\n\nПросто напиши: "Добавь Apple Music 1000 руб 15 числа"`);
+        return;
+    }
+
+    // Default Fallback
+    bot.sendMessage(chatId, '🤔 Я не понял команду. Попробуйте так:\n• "Добавь Netflix 10000 вон 12 числа"\n• "Удали Spotify"\n• "Мои подписки"');
+};
+
 // Helper function to ensure user document exists
 const ensureUserExists = async (chatId) => {
     try {
@@ -152,121 +340,61 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
+    // Skip commands, voice messages, and other types
     if (!text || text.startsWith('/')) return;
+    if (msg.voice) return; // Voice messages are handled separately
 
-    // Ensure user document exists when they interact
-    await ensureUserExists(chatId);
-
-    // 1. ADD Command: "Добавь Netflix за 999 вон 12 числа" OR "Добавь Netflix 999 вон"
-    // Regex: "Добавь" <name> [за] <cost> <currency> [date]
-    const addMatch = text.match(/(?:Добавь|Add)\s+(.+?)\s+(?:за|for)?\s*(\d+(?:[.,]\d+)?)\s*(.+)/i);
-
-    if (addMatch) {
-        const name = addMatch[1].trim();
-        const cost = parseFloat(addMatch[2].replace(',', '.'));
-        const restOfText = addMatch[3].trim();
-        
-        // Extract currency and date from the rest of the text
-        const { code, symbol } = detectCurrency(restOfText);
-        const { date, cycle } = parseDate(restOfText);
-
-        try {
-            const userDocRef = db.collection('users').doc(String(chatId));
-            const subscriptionData = {
-                name,
-                cost,
-                currency: code,
-                currencySymbol: symbol,
-                cycle: cycle,
-                nextPaymentDate: date,
-                category: 'Общие',
-                color: '#00D68F',
-                icon: name[0].toUpperCase(),
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
-            };
-            
-            console.log(`[BOT] Adding subscription for user ${chatId}:`, subscriptionData);
-            await userDocRef.collection('subscriptions').add(subscriptionData);
-            
-            const dateStr = new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-            bot.sendMessage(chatId, `✅ Добавлено: ${name} (${symbol}${cost}), следующий платеж: ${dateStr}`);
-            console.log(`[BOT] Subscription added successfully for user ${chatId}`);
-        } catch (e) {
-            console.error('[BOT] Error adding subscription:', e);
-            bot.sendMessage(chatId, '❌ Ошибка при добавлении в базу данных.');
-        }
-        return;
-    }
-
-    // 2. REMOVE Command: "Удали Spotify"
-    // Allow "Удали" or just "Удалить" etc
-    const removeMatch = text.match(/(?:Удали|Удалить|Remove|Delete)\s+(.+)/i);
-    if (removeMatch) {
-        const nameToRemove = removeMatch[1].trim();
-        try {
-            const snapshot = await db.collection('users').doc(String(chatId)).collection('subscriptions')
-                .where('name', '==', nameToRemove)
-                .get();
-
-            if (snapshot.empty) {
-                bot.sendMessage(chatId, `⚠️ Подписка "${nameToRemove}" не найдена. Проверьте название в списке "Мои подписки".`);
-                return;
-            }
-
-            const batch = db.batch();
-            snapshot.docs.forEach(doc => {
-                batch.delete(doc.ref);
-            });
-            await batch.commit();
-
-            bot.sendMessage(chatId, `🗑️ Удалено: ${nameToRemove}`);
-        } catch (e) {
-            console.error(e);
-            bot.sendMessage(chatId, '❌ Ошибка при удалении.');
-        }
-        return;
-    }
-
-    // 3. LIST Command: "Мои подписки"
-    if (text.match(/(?:Мои подписки|Список|List)/i)) {
-        try {
-            const snapshot = await db.collection('users').doc(String(chatId)).collection('subscriptions').get();
-
-            if (snapshot.empty) {
-                bot.sendMessage(chatId, 'У вас пока нет активных подписок.');
-                return;
-            }
-
-            let response = '📋 *Ваши подписки:*\n\n';
-
-            snapshot.docs.forEach(doc => {
-                const data = doc.data();
-                const sym = data.currencySymbol || '₩';
-                response += `• *${data.name}*: ${sym}${data.cost}\n`;
-            });
-
-            bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
-        } catch (e) {
-            console.error(e);
-            bot.sendMessage(chatId, '❌ Ошибка получения списка.');
-        }
-        return;
-    }
-
-    // 4. Greetings
-    if (text.match(/(?:Привет|Hello|Hi|Start)/i)) {
-        bot.sendMessage(chatId, `Привет! 👋 Я готов управлять твоими подписками.\n\nПросто напиши: "Добавь Apple Music 1000 руб 15 числа"`);
-        return;
-    }
-
-    // Default Fallback
-    bot.sendMessage(chatId, '🤔 Я не понял команду. Попробуйте так:\n• "Добавь Netflix 10000 вон 12 числа"\n• "Удали Spotify"\n• "Мои подписки"');
+    await processTextCommand(chatId, text);
 });
 
-// Voice message handler (Placeholder)
-bot.on('voice', (msg) => {
+// Voice message handler with speech recognition
+bot.on('voice', async (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, '🎤 Я пока не умею слушать голосовые сообщения, но скоро научусь! Пожалуйста, напишите текстом.');
+    const voice = msg.voice;
+
+    if (!openaiApiKey) {
+        bot.sendMessage(chatId, '⚠️ Распознавание голоса временно недоступно. Пожалуйста, напишите текстом.');
+        return;
+    }
+
+    try {
+        // Show user that bot is processing audio
+        const processingMsg = await bot.sendMessage(chatId, '🎤 Обрабатываю голосовое сообщение...');
+
+        // Download audio file
+        const audioFilePath = await downloadAudioFile(voice.file_id);
+        
+        // Transcribe speech
+        const transcribedText = await transcribeAudio(audioFilePath);
+        
+        // Delete temporary file
+        try {
+            fs.unlinkSync(audioFilePath);
+        } catch (unlinkError) {
+            console.warn('[BOT] Error deleting temp file:', unlinkError);
+        }
+
+        // Delete processing message
+        try {
+            await bot.deleteMessage(chatId, processingMsg.message_id);
+        } catch (deleteError) {
+            console.warn('[BOT] Error deleting processing message:', deleteError);
+        }
+
+        if (!transcribedText || transcribedText.trim().length === 0) {
+            bot.sendMessage(chatId, '❌ Не удалось распознать речь. Попробуйте еще раз или напишите текстом.');
+            return;
+        }
+
+        // Send recognized text to user
+        bot.sendMessage(chatId, `📝 Распознано: "${transcribedText}"`, { reply_to_message_id: msg.message_id });
+
+        // Process recognized text as regular text command
+        await processTextCommand(chatId, transcribedText);
+    } catch (error) {
+        console.error('[BOT] Error processing voice message:', error);
+        bot.sendMessage(chatId, '❌ Ошибка при обработке голосового сообщения. Попробуйте написать текстом.');
+    }
 });
 
 // Notification system - check for upcoming payments
@@ -390,6 +518,7 @@ console.log(`[NOTIFICATIONS] Notification system started. Will check every ${NOT
 console.log('🔍 Debug info:');
 console.log('- TELEGRAM_BOT_TOKEN:', process.env.TELEGRAM_BOT_TOKEN ? `✅ Set (${process.env.TELEGRAM_BOT_TOKEN.substring(0, 10)}...)` : '❌ Missing');
 console.log('- SERVICE_ACCOUNT:', process.env.SERVICE_ACCOUNT ? `✅ Set (${process.env.SERVICE_ACCOUNT.substring(0, 50)}...)` : '❌ Missing');
+console.log('- OPENAI_API_KEY:', openaiApiKey ? `✅ Set (${openaiApiKey.substring(0, 10)}...)` : '❌ Missing (Voice recognition disabled)');
 console.log('- WEB_APP_URL:', process.env.WEB_APP_URL || 'Using default');
 
 // Health check server for Railway
