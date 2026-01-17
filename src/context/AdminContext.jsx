@@ -65,17 +65,35 @@ export function AdminProvider({ children }) {
     }, [user, adminIds]);
 
     const fetchAdminStats = async () => {
+        console.log('[ADMIN] ==========================================');
+        console.log('[ADMIN] fetchAdminStats called');
+        console.log('[ADMIN] isAdmin:', isAdmin);
+        console.log('[ADMIN] user:', user);
+        console.log('[ADMIN] adminIds:', adminIds);
+        
         if (!isAdmin) {
-            console.warn('[ADMIN] User is not admin, cannot fetch stats');
+            console.warn('[ADMIN] ❌ User is not admin, cannot fetch stats');
+            console.warn('[ADMIN] User UID:', user?.uid);
+            console.warn('[ADMIN] Admin IDs:', adminIds);
             return;
         }
 
         try {
             setLoading(true);
-            console.log('[ADMIN] Fetching admin statistics...');
+            console.log('[ADMIN] ✅ Starting to fetch admin statistics...');
 
             // Get all users
-            const usersSnapshot = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')));
+            // Try with orderBy first, fallback to simple query if createdAt doesn't exist
+            let usersSnapshot;
+            try {
+                usersSnapshot = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')));
+            } catch (orderByError) {
+                console.warn('[ADMIN] Error with orderBy, trying without:', orderByError);
+                // Fallback: get all users without ordering
+                usersSnapshot = await getDocs(collection(db, 'users'));
+            }
+            
+            console.log('[ADMIN] Users snapshot size:', usersSnapshot.size);
             const users = [];
             const now = new Date();
             const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -128,9 +146,15 @@ export function AdminProvider({ children }) {
                 }
 
                 // Get user subscriptions
-                const subsSnapshot = await getDocs(collection(db, 'users', userId, 'subscriptions'));
-                const userSubs = subsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                totalSubscriptions += userSubs.length;
+                let userSubs = [];
+                try {
+                    const subsSnapshot = await getDocs(collection(db, 'users', userId, 'subscriptions'));
+                    userSubs = subsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    totalSubscriptions += userSubs.length;
+                    console.log(`[ADMIN] User ${userId} has ${userSubs.length} subscriptions`);
+                } catch (subsError) {
+                    console.warn(`[ADMIN] Error fetching subscriptions for user ${userId}:`, subsError);
+                }
 
                 // Count subscriptions by creation date
                 userSubs.forEach(sub => {
@@ -149,8 +173,14 @@ export function AdminProvider({ children }) {
                 });
 
                 // Get user categories
-                const catsSnapshot = await getDocs(collection(db, 'users', userId, 'categories'));
-                totalCategories += catsSnapshot.size;
+                let categoryCount = 0;
+                try {
+                    const catsSnapshot = await getDocs(collection(db, 'users', userId, 'categories'));
+                    categoryCount = catsSnapshot.size;
+                    totalCategories += categoryCount;
+                } catch (catsError) {
+                    console.warn(`[ADMIN] Error fetching categories for user ${userId}:`, catsError);
+                }
 
                 // Determine if user is active (last seen within last 7 days)
                 const isActive = lastSeen && lastSeen >= sevenDaysAgo;
@@ -166,7 +196,7 @@ export function AdminProvider({ children }) {
                     createdAt,
                     lastSeen,
                     subscriptionCount: userSubs.length,
-                    categoryCount: catsSnapshot.size,
+                    categoryCount: categoryCount,
                     isActive
                 });
             }
@@ -190,9 +220,30 @@ export function AdminProvider({ children }) {
             };
 
             setAdminStats(stats);
-            console.log('[ADMIN] Statistics fetched successfully:', stats);
+            console.log('[ADMIN] ✅ Statistics fetched successfully:', stats);
+            console.log('[ADMIN] Total users:', stats.totalUsers);
+            console.log('[ADMIN] Total subscriptions:', stats.totalSubscriptions);
         } catch (error) {
-            console.error('[ADMIN] Error fetching admin statistics:', error);
+            console.error('[ADMIN] ❌ Error fetching admin statistics:', error);
+            console.error('[ADMIN] Error details:', {
+                code: error.code,
+                message: error.message,
+                stack: error.stack
+            });
+            // Set empty stats on error so UI doesn't break
+            setAdminStats({
+                totalUsers: 0,
+                activeUsers: 0,
+                inactiveUsers: 0,
+                newUsersLast7Days: 0,
+                newUsersLast30Days: 0,
+                totalSubscriptions: 0,
+                totalCategories: 0,
+                averageSubscriptionsPerUser: 0,
+                usersByDay: {},
+                subscriptionsByDay: {},
+                users: []
+            });
         } finally {
             setLoading(false);
         }
