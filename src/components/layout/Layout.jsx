@@ -1,13 +1,16 @@
-import { Banknote } from 'lucide-react';
+import { Banknote, Shield } from 'lucide-react';
 import { BottomNav } from './BottomNav';
 import { useAuth } from '../../context/AuthContext';
+import { useAdmin } from '../../context/AdminContext';
+import { Link } from 'react-router-dom';
 
 export function Layout({ children }) {
     const { user } = useAuth();
+    const { isAdmin } = useAdmin();
     return (
         <div className="min-h-screen bg-background text-text flex flex-col">
             <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-white/5">
-                <div className="max-w-md mx-auto px-4 h-14 flex items-center">
+                <div className="max-w-md mx-auto px-4 h-14 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
                             <Banknote className="text-white w-5 h-5" />
@@ -16,6 +19,15 @@ export function Layout({ children }) {
                             AkwaFlow
                         </h1>
                     </div>
+                    {isAdmin && (
+                        <Link
+                            to="/admin"
+                            className="p-2 hover:bg-surface-hover rounded-lg transition-colors"
+                            title="Админ-панель"
+                        >
+                            <Shield className="w-5 h-5 text-primary" />
+                        </Link>
+                    )}
                 </div>
             </header>
 
