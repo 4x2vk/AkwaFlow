@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -23,11 +23,18 @@ function isLightColor(hexColor) {
     return luminance > 0.5;
 }
 
-export function SubscriptionItem({ icon, name, cycle, cost, color, currency = '₩', currencySymbol, onDelete, onClick }) {
+export function SubscriptionItem({ icon, iconUrl, name, cycle, cost, color, currency = '₩', currencySymbol, onDelete, onClick }) {
+    const [imageError, setImageError] = useState(false);
     const displayCurrency = currencySymbol || currency;
     const bgColor = color || '#333';
     const isLight = isLightColor(bgColor);
     const textColorClass = isLight ? 'text-black' : 'text-white';
+    const displayIcon = icon || name[0];
+    
+    // Сбрасываем ошибку при изменении iconUrl
+    useEffect(() => {
+        setImageError(false);
+    }, [iconUrl]);
     
     return (
         <Card
@@ -36,10 +43,19 @@ export function SubscriptionItem({ icon, name, cycle, cost, color, currency = '�
         >
             <div className="flex items-center gap-4">
                 <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold ${textColorClass} shadow-lg`}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold ${textColorClass} shadow-lg overflow-hidden`}
                     style={{ backgroundColor: bgColor }}
                 >
-                    {icon || name[0]}
+                    {iconUrl && !imageError ? (
+                        <img 
+                            src={iconUrl} 
+                            alt={name}
+                            className="w-full h-full object-cover"
+                            onError={() => setImageError(true)}
+                        />
+                    ) : (
+                        displayIcon
+                    )}
                 </div>
                 <div>
                     <h3 className="font-bold text-white text-base">{name}</h3>

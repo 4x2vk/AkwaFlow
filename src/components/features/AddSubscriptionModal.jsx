@@ -4,6 +4,7 @@ import { useSubscriptions } from '../../context/SubscriptionContext';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
+import { getIcon } from '../../services/iconService';
 
 export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
     const { addSubscription, updateSubscription, categories } = useSubscriptions();
@@ -85,6 +86,18 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
             }
         }
 
+        // Получаем иконку из API
+        let iconUrl = null;
+        let iconText = formData.name[0].toUpperCase();
+        
+        try {
+            iconUrl = await getIcon(formData.name, 'subscription');
+            console.log('[MODAL] Icon fetched:', iconUrl);
+        } catch (error) {
+            console.warn('[MODAL] Failed to fetch icon:', error);
+            // Продолжаем без иконки, используем первую букву
+        }
+
         const subData = {
             name: formData.name,
             cost: Number(formData.cost),
@@ -96,7 +109,8 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
             category: formData.category,
             // Use category color if available, else default green/form color
             color: selectedCat?.color || formData.color,
-            icon: formData.name[0].toUpperCase()
+            icon: iconText,
+            iconUrl: iconUrl // Сохраняем URL иконки
         };
 
         try {

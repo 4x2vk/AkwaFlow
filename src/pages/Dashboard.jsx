@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Calendar, CreditCard, TrendingUp } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
@@ -6,13 +6,41 @@ import { Button } from '../components/ui/Button';
 import { SubscriptionItem } from '../components/features/SubscriptionItem';
 import { useSubscriptions } from '../context/SubscriptionContext';
 import { AddSubscriptionModal } from '../components/features/AddSubscriptionModal';
+import { getIcon } from '../services/iconService';
 
 export default function Dashboard() {
-    const { subscriptions, removeSubscription, loading } = useSubscriptions();
+    const { subscriptions, removeSubscription, updateSubscription, loading } = useSubscriptions();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSubscription, setEditingSubscription] = useState(null);
     
     console.log('[DASHBOARD] Render - subscriptions:', subscriptions.length, 'loading:', loading);
+
+    // Автоматически обновляем иконки для подписок без иконок
+    useEffect(() => {
+        const updateIcons = async () => {
+            const subscriptionsWithoutIcons = subscriptions.filter(sub => !sub.iconUrl && sub.name);
+            
+            if (subscriptionsWithoutIcons.length === 0) return;
+            
+            console.log('[DASHBOARD] Updating icons for', subscriptionsWithoutIcons.length, 'subscriptions');
+            
+            for (const sub of subscriptionsWithoutIcons) {
+                try {
+                    const iconUrl = await getIcon(sub.name, 'subscription');
+                    if (iconUrl) {
+                        console.log('[DASHBOARD] Found icon for', sub.name, ':', iconUrl);
+                        await updateSubscription(sub.id, { iconUrl });
+                    }
+                } catch (error) {
+                    console.warn('[DASHBOARD] Failed to get icon for', sub.name, ':', error);
+                }
+            }
+        };
+        
+        // Обновляем иконки с небольшой задержкой, чтобы не блокировать рендер
+        const timeoutId = setTimeout(updateIcons, 1000);
+        return () => clearTimeout(timeoutId);
+    }, [subscriptions, updateSubscription]);
 
     // Calculate totals per currency
     const totalsByCurrency = subscriptions.reduce((acc, sub) => {
