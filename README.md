@@ -48,7 +48,15 @@ npm install
 #### Frontend Setup
 
 1. Create a Firebase project and get your config
-2. Add your Firebase config to `src/services/firebase.js`
+2. Set up environment variables (create `.env` file locally):
+   ```env
+   VITE_FIREBASE_API_KEY=your_api_key
+   VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=your_project_id
+   VITE_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
+   VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   VITE_FIREBASE_APP_ID=your_app_id
+   ```
 3. Set up Firestore rules (check `firestore.rules`)
 
 #### Bot Setup (Optional)
@@ -162,7 +170,7 @@ This project is open source and available under the MIT License.
 
 I built this because I needed it. Simple as that. If you find it useful, great! If you have suggestions, even better. If you just want to see how it works, feel free to poke around the code.
 
-Happy tracking! 📊
+Happy tracking!
 
 ---
 
