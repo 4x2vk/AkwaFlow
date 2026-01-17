@@ -148,13 +148,13 @@ export default function Analytics() {
     const monthlyData = calculateMonthlyExpenses();
 
     const RADIAN = Math.PI / 180;
-    const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name, value }) => {
+    const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }) => {
         const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
         const x = cx + radius * Math.cos(-midAngle * RADIAN);
         const y = cy + radius * Math.sin(-midAngle * RADIAN);
         
-        // Форматируем значение с валютой
-        const formattedValue = `${primaryCurrency}${value.toLocaleString()}`;
+        // Форматируем процент
+        const percentage = `${(percent * 100).toFixed(0)}%`;
         
         // Показываем только если процент больше 5%, чтобы не перегружать маленькие сегменты
         if (percent < 0.05) return null;
@@ -180,7 +180,7 @@ export default function Analytics() {
                     dominantBaseline="central" 
                     fontSize={10}
                 >
-                    {formattedValue}
+                    {percentage}
                 </text>
             </g>
         );
@@ -253,15 +253,17 @@ export default function Analytics() {
                                 />
                             </PieChart>
                         </ResponsiveContainer>
-                        <div className="flex gap-4 mt-2 justify-center flex-wrap">
-                            {pieData.map(item => (
-                                <div key={item.name} className="flex items-center gap-2">
-                                    <div className="w-3 h-3 rounded-full" style={{ background: item.color }} />
-                                    <span className="text-xs text-text-secondary">
-                                        {item.name}: {primaryCurrency}{item.value.toLocaleString()}
-                                    </span>
-                                </div>
-                            ))}
+                        <div className="w-full mt-2 max-h-32 overflow-y-auto">
+                            <div className="grid grid-cols-2 gap-2 px-2">
+                                {pieData.map(item => (
+                                    <div key={item.name} className="flex items-center gap-2 min-w-0">
+                                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                                        <span className="text-xs text-text-secondary truncate">
+                                            <span className="font-medium">{item.name}:</span> {primaryCurrency}{item.value.toLocaleString()}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </Card>
@@ -270,19 +272,30 @@ export default function Analytics() {
                     <h3 className="text-sm font-bold text-white mb-4">Расходы по месяцам</h3>
                     <div className="h-48 w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyData} margin={{ top: 5, right: 10, left: 5, bottom: 5 }}>
+                            <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: 20, bottom: 35 }}>
                                 <XAxis 
                                     dataKey="name" 
-                                    tick={{ fill: '#9CA3AF', fontSize: 11, fontWeight: 500 }} 
-                                    axisLine={false} 
-                                    tickLine={false} 
-                                />
-                                <YAxis 
-                                    tick={{ fill: '#FFFFFF', fontSize: 11, fontWeight: 500 }} 
+                                    tick={{ fill: '#9CA3AF', fontSize: 10, fontWeight: 500 }} 
                                     axisLine={false} 
                                     tickLine={false}
-                                    width={50}
+                                    interval={0}
+                                    angle={-45}
+                                    textAnchor="end"
+                                    height={60}
+                                    tickMargin={8}
+                                />
+                                <YAxis 
+                                    tick={{ fill: '#FFFFFF', fontSize: 10, fontWeight: 500 }} 
+                                    axisLine={false} 
+                                    tickLine={false}
+                                    width={60}
                                     tickFormatter={(value) => {
+                                        // Сокращаем большие числа для компактности на мобильных
+                                        if (value >= 1000000) {
+                                            return `${primaryCurrency}${(value / 1000000).toFixed(1)}M`;
+                                        } else if (value >= 1000) {
+                                            return `${primaryCurrency}${(value / 1000).toFixed(0)}K`;
+                                        }
                                         return `${primaryCurrency}${value.toLocaleString()}`;
                                     }}
                                 />
