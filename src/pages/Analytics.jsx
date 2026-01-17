@@ -14,6 +14,21 @@ export default function Analytics() {
         return acc;
     }, {});
 
+    // Get the most common currency (primary currency)
+    const getPrimaryCurrency = () => {
+        if (subscriptions.length === 0) return '₩';
+        const currencyCounts = {};
+        subscriptions.forEach(sub => {
+            const currency = sub.currencySymbol || '₩';
+            currencyCounts[currency] = (currencyCounts[currency] || 0) + 1;
+        });
+        const primaryCurrency = Object.entries(currencyCounts)
+            .sort((a, b) => b[1] - a[1])[0]?.[0] || '₩';
+        return primaryCurrency;
+    };
+
+    const primaryCurrency = getPrimaryCurrency();
+
     // For Pie Chart (Distribution), we probably want to visualize "Expense Distribution".
     // Since we can't easily sum apples and oranges (won and rub) for a single pie, 
     // we have two options: 
@@ -133,15 +148,41 @@ export default function Analytics() {
     const monthlyData = calculateMonthlyExpenses();
 
     const RADIAN = Math.PI / 180;
-    const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }) => {
+    const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name, value }) => {
         const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
         const x = cx + radius * Math.cos(-midAngle * RADIAN);
         const y = cy + radius * Math.sin(-midAngle * RADIAN);
+        
+        // Форматируем значение с валютой
+        const formattedValue = `${primaryCurrency}${value.toLocaleString()}`;
+        
+        // Показываем только если процент больше 5%, чтобы не перегружать маленькие сегменты
+        if (percent < 0.05) return null;
 
         return (
-            <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={10}>
-                {name}
-            </text>
+            <g>
+                <text 
+                    x={x} 
+                    y={y - 8} 
+                    fill="white" 
+                    textAnchor={x > cx ? 'start' : 'end'} 
+                    dominantBaseline="central" 
+                    fontSize={11}
+                    fontWeight="bold"
+                >
+                    {name}
+                </text>
+                <text 
+                    x={x} 
+                    y={y + 8} 
+                    fill="#9CA3AF" 
+                    textAnchor={x > cx ? 'start' : 'end'} 
+                    dominantBaseline="central" 
+                    fontSize={10}
+                >
+                    {formattedValue}
+                </text>
+            </g>
         );
     };
 
@@ -187,24 +228,38 @@ export default function Analytics() {
                                 <Pie
                                     data={pieData}
                                     innerRadius={50}
-                                    outerRadius={80}
+                                    outerRadius={90}
                                     paddingAngle={5}
                                     dataKey="value"
                                     stroke="none"
-                                    label={renderCustomizedLabel} // Shows Category Name only (or percent if we changed it)
+                                    label={renderCustomizedLabel}
                                     labelLine={false}
                                 >
                                     {pieData.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={entry.color} />
                                     ))}
                                 </Pie>
+                                <Tooltip
+                                    contentStyle={{ 
+                                        backgroundColor: '#1E1E1E', 
+                                        border: '1px solid rgba(255,255,255,0.1)', 
+                                        borderRadius: '8px',
+                                        padding: '8px 12px',
+                                        boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
+                                    }}
+                                    formatter={(value, name) => {
+                                        return [`${primaryCurrency}${value.toLocaleString()}`, name];
+                                    }}
+                                />
                             </PieChart>
                         </ResponsiveContainer>
                         <div className="flex gap-4 mt-2 justify-center flex-wrap">
                             {pieData.map(item => (
                                 <div key={item.name} className="flex items-center gap-2">
                                     <div className="w-3 h-3 rounded-full" style={{ background: item.color }} />
-                                    <span className="text-xs text-text-secondary">{item.name}</span>
+                                    <span className="text-xs text-text-secondary">
+                                        {item.name}: {primaryCurrency}{item.value.toLocaleString()}
+                                    </span>
                                 </div>
                             ))}
                         </div>
@@ -215,12 +270,44 @@ export default function Analytics() {
                     <h3 className="text-sm font-bold text-white mb-4">Расходы по месяцам</h3>
                     <div className="h-48 w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyData} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
-                                <XAxis dataKey="name" tick={{ fill: '#666', fontSize: 10 }} axisLine={false} tickLine={false} />
-                                <YAxis tick={{ fill: '#666', fontSize: 10 }} axisLine={false} tickLine={false} />
+                            <BarChart data={monthlyData} margin={{ top: 5, right: 10, left: 5, bottom: 5 }}>
+                                <XAxis 
+                                    dataKey="name" 
+                                    tick={{ fill: '#9CA3AF', fontSize: 11, fontWeight: 500 }} 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                />
+                                <YAxis 
+                                    tick={{ fill: '#FFFFFF', fontSize: 11, fontWeight: 500 }} 
+                                    axisLine={false} 
+                                    tickLine={false}
+                                    width={50}
+                                    tickFormatter={(value) => {
+                                        return `${primaryCurrency}${value.toLocaleString()}`;
+                                    }}
+                                />
                                 <Tooltip
-                                    contentStyle={{ backgroundColor: '#1E1E1E', border: 'none', borderRadius: '8px' }}
-                                    itemStyle={{ color: '#fff' }}
+                                    contentStyle={{ 
+                                        backgroundColor: '#1E1E1E', 
+                                        border: '1px solid rgba(255,255,255,0.1)', 
+                                        borderRadius: '8px',
+                                        padding: '8px 12px',
+                                        boxShadow: '0 4px 6px rgba(0,0,0,0.3)'
+                                    }}
+                                    labelStyle={{ 
+                                        color: '#fff', 
+                                        fontSize: '11px',
+                                        marginBottom: '4px',
+                                        fontWeight: 'bold'
+                                    }}
+                                    itemStyle={{ 
+                                        color: '#fff', 
+                                        fontSize: '12px',
+                                        padding: '2px 0'
+                                    }}
+                                    formatter={(value) => {
+                                        return [`${primaryCurrency}${value.toLocaleString()}`, 'Расходы'];
+                                    }}
                                     cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                                 />
                                 <Bar dataKey="cost" fill="#00D68F" radius={[4, 4, 0, 0]} />

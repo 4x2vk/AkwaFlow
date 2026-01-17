@@ -61,20 +61,33 @@ export function CategoryModal({ isOpen, onClose, initialData = null }) {
                     </div>
 
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-text-secondary">Цвет (HEX)</label>
-                        <div className="flex gap-2">
-                            <Input
-                                type="color"
-                                className="w-12 p-1 h-12"
-                                value={formData.color}
-                                onChange={e => setFormData({ ...formData, color: e.target.value })}
-                            />
-                            <Input
-                                required
-                                placeholder="#00D68F"
-                                value={formData.color}
-                                onChange={e => setFormData({ ...formData, color: e.target.value })}
-                            />
+                        <label className="text-sm font-medium text-text-secondary">Цвет</label>
+                        <div className="grid grid-cols-5 gap-2">
+                            {[
+                                '#00D68F', // Зеленый
+                                '#3B82F6', // Синий
+                                '#8B5CF6', // Фиолетовый
+                                '#F59E0B', // Оранжевый
+                                '#EF4444', // Красный
+                                '#EC4899', // Розовый
+                                '#06B6D4', // Голубой
+                                '#FBBF24', // Желтый
+                                '#6366F1', // Индиго
+                                '#10B981'  // Изумрудный
+                            ].map((color) => (
+                                <button
+                                    key={color}
+                                    type="button"
+                                    onClick={() => setFormData({ ...formData, color })}
+                                    className={`w-full h-12 rounded-lg transition-all ${
+                                        formData.color === color
+                                            ? 'ring-2 ring-white ring-offset-2 ring-offset-surface scale-105'
+                                            : 'hover:scale-105'
+                                    }`}
+                                    style={{ backgroundColor: color }}
+                                    title={color}
+                                />
+                            ))}
                         </div>
                     </div>
 
