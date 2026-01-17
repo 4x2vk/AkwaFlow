@@ -361,31 +361,47 @@ bot.on('voice', async (msg) => {
     const chatId = msg.chat.id;
     const voice = msg.voice;
 
+    console.log(`[BOT] Voice message received from ${chatId}, file_id: ${voice.file_id}`);
+
     if (!openaiApiKey) {
+        console.warn('[BOT] OPENAI_API_KEY not set, voice recognition disabled');
         bot.sendMessage(chatId, '⚠️ Распознавание голоса временно недоступно. Пожалуйста, напишите текстом.');
         return;
     }
 
+    let processingMsg = null;
+    let audioFilePath = null;
+
     try {
         // Show user that bot is processing audio
-        const processingMsg = await bot.sendMessage(chatId, '🎤 Обрабатываю голосовое сообщение...');
+        processingMsg = await bot.sendMessage(chatId, '🎤 Обрабатываю голосовое сообщение...');
+        console.log(`[BOT] Processing voice message for user ${chatId}`);
 
         // Download audio file
-        const audioFilePath = await downloadAudioFile(voice.file_id);
+        console.log(`[BOT] Downloading audio file ${voice.file_id}...`);
+        audioFilePath = await downloadAudioFile(voice.file_id);
+        console.log(`[BOT] Audio file downloaded to: ${audioFilePath}`);
         
         // Transcribe speech
+        console.log(`[BOT] Transcribing audio with OpenAI Whisper...`);
         const transcribedText = await transcribeAudio(audioFilePath);
+        console.log(`[BOT] Transcription result: "${transcribedText}"`);
         
         // Delete temporary file
         try {
-            fs.unlinkSync(audioFilePath);
+            if (audioFilePath && fs.existsSync(audioFilePath)) {
+                fs.unlinkSync(audioFilePath);
+                console.log(`[BOT] Temp file deleted: ${audioFilePath}`);
+            }
         } catch (unlinkError) {
             console.warn('[BOT] Error deleting temp file:', unlinkError);
         }
 
         // Delete processing message
         try {
-            await bot.deleteMessage(chatId, processingMsg.message_id);
+            if (processingMsg) {
+                await bot.deleteMessage(chatId, processingMsg.message_id);
+            }
         } catch (deleteError) {
             console.warn('[BOT] Error deleting processing message:', deleteError);
         }
@@ -402,7 +418,22 @@ bot.on('voice', async (msg) => {
         await processTextCommand(chatId, transcribedText);
     } catch (error) {
         console.error('[BOT] Error processing voice message:', error);
-        bot.sendMessage(chatId, '❌ Ошибка при обработке голосового сообщения. Попробуйте написать текстом.');
+        console.error('[BOT] Error stack:', error.stack);
+        
+        // Clean up temp file if it exists
+        if (audioFilePath) {
+            try {
+                if (fs.existsSync(audioFilePath)) {
+                    fs.unlinkSync(audioFilePath);
+                }
+            } catch (cleanupError) {
+                console.warn('[BOT] Error cleaning up temp file:', cleanupError);
+            }
+        }
+
+        // Send user-friendly error message
+        const errorMessage = error.message || 'Неизвестная ошибка';
+        bot.sendMessage(chatId, `❌ Ошибка при обработке голосового сообщения: ${errorMessage}. Попробуйте написать текстом.`);
     }
 });
 
