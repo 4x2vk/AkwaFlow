@@ -275,7 +275,7 @@ const processTextCommand = async (chatId, text) => {
             await userDocRef.collection('subscriptions').add(subscriptionData);
             
             const dateStr = new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-            bot.sendMessage(chatId, `✅ Добавлено: ${name} (${symbol}${cost}), следующий платеж: ${dateStr}`);
+            bot.sendMessage(chatId, `✅ Отлично! Добавил подписку "${name}" на сумму ${symbol}${cost.toLocaleString()}. Следующий платеж: ${dateStr}. 🎉`);
             return;
         } catch (e) {
             console.error('[BOT] Error adding subscription:', e);
@@ -294,7 +294,7 @@ const processTextCommand = async (chatId, text) => {
                 .get();
 
             if (snapshot.empty) {
-                bot.sendMessage(chatId, `⚠️ Подписка "${nameToRemove}" не найдена. Проверьте название в списке "Мои подписки".`);
+                bot.sendMessage(chatId, `😔 Извините, но подписка "${nameToRemove}" не найдена. Пожалуйста, проверьте название в списке "Мои подписки". 💡`);
                 return;
             }
 
@@ -304,11 +304,11 @@ const processTextCommand = async (chatId, text) => {
             });
             await batch.commit();
 
-            bot.sendMessage(chatId, `🗑️ Удалено: ${nameToRemove}`);
+            bot.sendMessage(chatId, `✅ Готово! Подписка "${nameToRemove}" успешно удалена. 😊`);
             return;
         } catch (e) {
             console.error(e);
-            bot.sendMessage(chatId, '❌ Ошибка при удалении.');
+            bot.sendMessage(chatId, '😔 Извините, произошла ошибка при удалении подписки. Попробуйте еще раз позже. 🙏');
             return;
         }
     }
@@ -319,11 +319,11 @@ const processTextCommand = async (chatId, text) => {
             const snapshot = await db.collection('users').doc(String(chatId)).collection('subscriptions').get();
 
             if (snapshot.empty) {
-                bot.sendMessage(chatId, 'У вас пока нет активных подписок.');
+                bot.sendMessage(chatId, '📭 У вас пока нет активных подписок. Хотите добавить первую? Просто напишите: "Добавь Netflix 10000 вон 12 числа" 😊');
                 return;
             }
 
-            let response = '📋 *Ваши подписки:*\n\n';
+            let response = '📋 *Ваши активные подписки:*\n\n';
             snapshot.docs.forEach(doc => {
                 const data = doc.data();
                 const sym = data.currencySymbol || '₩';
@@ -334,19 +334,19 @@ const processTextCommand = async (chatId, text) => {
             return;
         } catch (e) {
             console.error(e);
-            bot.sendMessage(chatId, '❌ Ошибка получения списка.');
+            bot.sendMessage(chatId, '😔 Извините, не удалось получить список подписок. Попробуйте позже. 🙏');
             return;
         }
     }
 
     // 4. Greetings
     if (text.match(/(?:Привет|Hello|Hi|Start)/i)) {
-        bot.sendMessage(chatId, `Привет! 👋 Я готов управлять твоими подписками.\n\nПросто напиши: "Добавь Apple Music 1000 руб 15 числа"`);
+        bot.sendMessage(chatId, `Привет! 👋 Рад тебя видеть! Я помогу управлять твоими подписками. 😊\n\nПросто напиши или скажи: "Добавь Apple Music 1000 руб 15 числа"`);
         return;
     }
 
     // Default Fallback
-    bot.sendMessage(chatId, '🤔 Я не понял команду. Попробуйте так:\n• "Добавь Netflix 10000 вон 12 числа"\n• "Удали Spotify"\n• "Мои подписки"');
+    bot.sendMessage(chatId, '🤔 Извините, я не совсем понял команду. Попробуйте один из вариантов:\n\n• "Добавь Netflix 10000 вон 12 числа"\n• "Удали Spotify"\n• "Мои подписки"\n\nИли просто скажите это голосовым сообщением! 🎤');
 };
 
 // Helper function to ensure user document exists
@@ -400,7 +400,7 @@ bot.on('voice', async (msg) => {
 
     if (!openaiApiKey) {
         console.warn('[BOT] OPENAI_API_KEY not set, voice recognition disabled');
-        bot.sendMessage(chatId, '⚠️ Распознавание голоса временно недоступно. Пожалуйста, напишите текстом.');
+        bot.sendMessage(chatId, '😔 Извините, распознавание голоса временно недоступно. Пожалуйста, напишите текстом. 🙏');
         return;
     }
 
@@ -409,7 +409,7 @@ bot.on('voice', async (msg) => {
 
     try {
         // Show user that bot is processing audio
-        processingMsg = await bot.sendMessage(chatId, '🎤 Обрабатываю голосовое сообщение...');
+        processingMsg = await bot.sendMessage(chatId, '🎤 Слушаю ваше сообщение... Пожалуйста, подождите немного! 😊');
         console.log(`[BOT] Processing voice message for user ${chatId}`);
 
         // Download audio file
@@ -442,12 +442,12 @@ bot.on('voice', async (msg) => {
         }
 
         if (!transcribedText || transcribedText.trim().length === 0) {
-            bot.sendMessage(chatId, '❌ Не удалось распознать речь. Попробуйте еще раз или напишите текстом.');
+            bot.sendMessage(chatId, '😔 Извините, не удалось распознать речь. Пожалуйста, попробуйте записать сообщение еще раз или напишите текстом. 🎤');
             return;
         }
 
-        // Send recognized text to user
-        bot.sendMessage(chatId, `📝 Распознано: "${transcribedText}"`, { reply_to_message_id: msg.message_id });
+        // Send recognized text to user (don't send if transcription is the same as what we'll process)
+        // bot.sendMessage(chatId, `📝 Распознано: "${transcribedText}"`, { reply_to_message_id: msg.message_id });
 
         // Process recognized text as regular text command
         await processTextCommand(chatId, transcribedText);
@@ -468,7 +468,7 @@ bot.on('voice', async (msg) => {
 
         // Send user-friendly error message
         const errorMessage = error.message || 'Неизвестная ошибка';
-        bot.sendMessage(chatId, `❌ Ошибка при обработке голосового сообщения: ${errorMessage}. Попробуйте написать текстом.`);
+        bot.sendMessage(chatId, `😔 Извините, произошла ошибка при обработке голосового сообщения. Пожалуйста, попробуйте написать текстом или записать сообщение еще раз. 🙏`);
     }
 });
 
