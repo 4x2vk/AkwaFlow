@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Receipt, TrendingUp, Calendar } from 'lucide-react';
+import { Plus, Wallet, TrendingUp, Calendar } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -53,7 +53,7 @@ export default function Expenses() {
                         <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-orange-500/15"></div>
                         <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-orange-500/10"></div>
                         <div className="absolute top-2 right-2 opacity-20">
-                            <Receipt size={28} className="text-orange-400" />
+                            <Wallet size={28} className="text-orange-400" />
                         </div>
                         <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">этот месяц</span>
                         <div className="flex flex-col gap-1 relative z-10 mt-1">
