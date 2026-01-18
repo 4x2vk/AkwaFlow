@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
@@ -9,57 +9,13 @@ export default function Analytics() {
     const { subscriptions } = useSubscriptions();
     const { expenses } = useExpenses();
 
-    // Group costs by currency for totals
-    const totalsByCurrency = subscriptions.reduce((acc, sub) => {
-        const currency = sub.currencySymbol || '₽';
-        acc[currency] = (acc[currency] || 0) + (sub.cost || 0);
-        return acc;
-    }, {});
-
-    // Get the most common currency (primary currency)
-    const getPrimaryCurrency = () => {
-        if (subscriptions.length === 0) return '₽';
-        const currencyCounts = {};
-        subscriptions.forEach(sub => {
-            const currency = sub.currencySymbol || '₽';
-            currencyCounts[currency] = (currencyCounts[currency] || 0) + 1;
-        });
-        const primaryCurrency = Object.entries(currencyCounts)
-            .sort((a, b) => b[1] - a[1])[0]?.[0] || '₽';
-        return primaryCurrency;
-    };
-
-    const primaryCurrency = getPrimaryCurrency();
-
-    // For Pie Chart (Distribution), we probably want to visualize "Expense Distribution".
-    // Since we can't easily sum apples and oranges (won and rub) for a single pie, 
-    // we have two options: 
-    // 1. One chart per currency
-    // 2. Just count distribution logic?
-    // User said "remove cost just show categories" in the sector. 
-    // Let's assume we stick to one chart but maybe just aggregate generic "value" (cost) 
-    // expecting user might mentally separate, OR just show one chart.
-    // Actually, mixing currencies in one PIE is misleading. 
-    // Let's create a "Primary" pie chart based on the most frequent currency OR 
-    // just ignore currency for the *visual slice* logic (treating 1000 RUB same as 1000 KRW visually is wrong though).
-    // Let's default to just "Count" distribution for the visual pie if currencies are mixed?
-    // OR, better: let's show value distribution but just grab the raw numbers. It's an MVP.
-    // User specifically asked "remove cost in sector... show category". 
-    // I will use accumulated cost for the slice size, but hide the value label.
-
-    const categoryData = {};
-    subscriptions.forEach(sub => {
-        const cat = sub.category || 'Общие';
-        if (!categoryData[cat]) {
-            categoryData[cat] = { name: cat, value: 0, color: sub.color || '#6B7280' };
-        }
-        // Nivea improvement: maybe just use count for reliability across currencies? 
-        // "Expenses by category" -> usually cost. 
-        // Let's sum raw numbers. It's imperfect but requested.
-        categoryData[cat].value += (sub.cost || 0);
-    });
-
-    const pieData = Object.values(categoryData).filter(d => d.value > 0);
+    const now = useMemo(() => {
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }, []);
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
 
     const getMonthLabels = () => ([
         { name: 'Янв', month: 0 },
@@ -76,113 +32,105 @@ export default function Analytics() {
         { name: 'Дек', month: 11 },
     ]);
 
-    // Calculate monthly subscription expenses (projection) based on payment dates and billing periods
-    const calculateMonthlySubscriptionExpenses = () => {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
-        const currentYear = now.getFullYear();
-        const currentMonth = now.getMonth();
-        
-        const months = getMonthLabels().map((m) => ({ ...m, subscriptions: 0 }));
-
-        subscriptions.forEach(sub => {
-            if (!sub.nextPaymentDate) return;
-
-            // Parse nextPaymentDate
-            let paymentDate;
-            if (sub.nextPaymentDate.toDate) {
-                paymentDate = sub.nextPaymentDate.toDate();
-            } else {
-                paymentDate = new Date(sub.nextPaymentDate);
-            }
-            paymentDate.setHours(0, 0, 0, 0);
-
+    // "Stable subscriptions" = monthly equivalent
+    const subscriptionMonthlyByCurrency = useMemo(() => {
+        return subscriptions.reduce((acc, sub) => {
+            const sym = sub.currencySymbol || '₩';
             const billingPeriod = sub.billingPeriod || (sub.cycle && sub.cycle.includes('год') ? 'yearly' : 'monthly');
-            const cost = sub.cost || 0;
+            const cost = Number(sub.cost || 0);
+            const monthlyEquivalent = billingPeriod === 'yearly' ? (cost / 12) : cost;
+            acc[sym] = (acc[sym] || 0) + monthlyEquivalent;
+            return acc;
+        }, {});
+    }, [subscriptions]);
 
-            // For yearly subscriptions
-            if (billingPeriod === 'yearly') {
-                const paymentMonth = paymentDate.getMonth();
-                const paymentYear = paymentDate.getFullYear();
-                
-                // Only add to months that have already passed or are current month
-                // Payment must be in current year and month must be <= currentMonth
-                if (paymentYear === currentYear && paymentMonth <= currentMonth) {
-                    months[paymentMonth].subscriptions += cost;
-                }
-            } else {
-                // For monthly subscriptions - calculate based on payment day
-                const paymentDay = paymentDate.getDate();
-                
-                // Start from the original payment date
-                let currentPaymentDate = new Date(paymentDate);
-                
-                // Find the first payment date in the current year
-                // Move payment date to current year if needed
-                while (currentPaymentDate.getFullYear() < currentYear) {
-                    currentPaymentDate = new Date(currentPaymentDate.getFullYear(), currentPaymentDate.getMonth() + 1, paymentDay);
-                }
-                
-                // If payment is in next year, skip this subscription for current year
-                if (currentPaymentDate.getFullYear() > currentYear) {
-                    return;
-                }
-                
-                // Calculate all payments from start of year up to current month
-                let paymentIterator = new Date(currentYear, 0, paymentDay);
-                
-                // If subscription started mid-year, start from the actual first payment
-                if (currentPaymentDate.getMonth() > 0 || (currentPaymentDate.getMonth() === 0 && currentPaymentDate.getDate() !== paymentDay)) {
-                    paymentIterator = new Date(currentPaymentDate);
-                }
-                
-                // Add cost for each month from first payment to current month
-                while (paymentIterator.getFullYear() === currentYear && paymentIterator.getMonth() <= currentMonth) {
-                    const monthIndex = paymentIterator.getMonth();
-                    months[monthIndex].subscriptions += cost;
-                    // Move to next month
-                    paymentIterator = new Date(paymentIterator.getFullYear(), paymentIterator.getMonth() + 1, paymentDay);
-                }
-            }
+    const expenseThisMonthByCurrency = useMemo(() => {
+        return expenses.reduce((acc, e) => {
+            if (!e?.spentAt) return acc;
+            const d = new Date(e.spentAt);
+            if (isNaN(d.getTime())) return acc;
+            if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return acc;
+            const sym = e.currencySymbol || '₩';
+            acc[sym] = (acc[sym] || 0) + Number(e.amount || 0);
+            return acc;
+        }, {});
+    }, [expenses, currentMonth, currentYear]);
+
+    const totalThisMonthByCurrency = useMemo(() => {
+        const combined = { ...expenseThisMonthByCurrency };
+        Object.entries(subscriptionMonthlyByCurrency).forEach(([sym, amount]) => {
+            combined[sym] = (combined[sym] || 0) + Number(amount || 0);
         });
+        return combined;
+    }, [expenseThisMonthByCurrency, subscriptionMonthlyByCurrency]);
 
-        return months;
-    };
+    const primaryCurrency = useMemo(() => {
+        const allSyms = Object.keys(subscriptionMonthlyByCurrency);
+        if (allSyms.length > 0) return allSyms[0];
+        const expSyms = Object.keys(expenseThisMonthByCurrency);
+        return expSyms[0] || '₩';
+    }, [expenseThisMonthByCurrency, subscriptionMonthlyByCurrency]);
 
-    // Calculate monthly one-time expenses (actuals) from expenses list
-    const calculateMonthlyOneTimeExpenses = () => {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
-        const currentYear = now.getFullYear();
+    const subscriptionMonthlyTotal = useMemo(() => {
+        return subscriptions.reduce((sum, sub) => {
+            const billingPeriod = sub.billingPeriod || (sub.cycle && sub.cycle.includes('год') ? 'yearly' : 'monthly');
+            const cost = Number(sub.cost || 0);
+            const monthlyEquivalent = billingPeriod === 'yearly' ? (cost / 12) : cost;
+            return sum + monthlyEquivalent;
+        }, 0);
+    }, [subscriptions]);
 
+    const expenseMonthlyTotals = useMemo(() => {
         const months = getMonthLabels().map((m) => ({ ...m, expenses: 0 }));
-
         expenses.forEach((e) => {
             if (!e?.spentAt) return;
             const d = new Date(e.spentAt);
             if (isNaN(d.getTime())) return;
             if (d.getFullYear() !== currentYear) return;
-            const monthIndex = d.getMonth();
-            months[monthIndex].expenses += (e.amount || 0);
+            months[d.getMonth()].expenses += Number(e.amount || 0);
         });
-
         return months;
-    };
+    }, [expenses, currentYear]);
 
-    const subscriptionMonths = calculateMonthlySubscriptionExpenses();
-    const expenseMonths = calculateMonthlyOneTimeExpenses();
+    const monthlyCompareData = useMemo(() => {
+        return getMonthLabels().map((m) => {
+            const exp = expenseMonthlyTotals.find((x) => x.month === m.month)?.expenses || 0;
+            return {
+                name: m.name,
+                month: m.month,
+                subscriptions: subscriptionMonthlyTotal,
+                expenses: exp,
+                total: subscriptionMonthlyTotal + exp
+            };
+        });
+    }, [expenseMonthlyTotals, subscriptionMonthlyTotal]);
 
-    const monthlyCompareData = getMonthLabels().map((m) => {
-        const subs = subscriptionMonths.find((x) => x.month === m.month)?.subscriptions || 0;
-        const exp = expenseMonths.find((x) => x.month === m.month)?.expenses || 0;
-        return {
-            name: m.name,
-            month: m.month,
-            subscriptions: subs,
-            expenses: exp,
-            total: subs + exp
-        };
-    });
+    const subscriptionByCategory = useMemo(() => {
+        const map = {};
+        subscriptions.forEach((sub) => {
+            const cat = sub.category || 'Общие';
+            const billingPeriod = sub.billingPeriod || (sub.cycle && sub.cycle.includes('год') ? 'yearly' : 'monthly');
+            const cost = Number(sub.cost || 0);
+            const monthlyEquivalent = billingPeriod === 'yearly' ? (cost / 12) : cost;
+            if (!map[cat]) map[cat] = { name: cat, value: 0, color: sub.color || '#6B7280' };
+            map[cat].value += monthlyEquivalent;
+        });
+        return Object.values(map).filter((d) => d.value > 0);
+    }, [subscriptions]);
+
+    const expenseByCategoryThisMonth = useMemo(() => {
+        const map = {};
+        expenses.forEach((e) => {
+            if (!e?.spentAt) return;
+            const d = new Date(e.spentAt);
+            if (isNaN(d.getTime())) return;
+            if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return;
+            const cat = e.category || 'Общие';
+            if (!map[cat]) map[cat] = { name: cat, value: 0, color: e.color || '#6B7280' };
+            map[cat].value += Number(e.amount || 0);
+        });
+        return Object.values(map).filter((d) => d.value > 0);
+    }, [currentMonth, currentYear, expenses]);
 
     const RADIAN = Math.PI / 180;
     const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {
@@ -226,44 +174,60 @@ export default function Analytics() {
     return (
         <Layout>
             <div className="space-y-6">
-                <div className="grid grid-cols-1 gap-4">
-                    <Card className="bg-surface border-white/5 p-6 flex flex-col items-center justify-center text-center">
-                        <span className="text-sm text-text-secondary mb-2">Месячные расходы</span>
-                        <div className="flex flex-wrap gap-4 justify-center">
-                            {Object.entries(totalsByCurrency).length > 0 ? (
-                                Object.entries(totalsByCurrency).map(([curr, amount]) => (
-                                    <span key={curr} className="text-3xl font-bold text-white">
-                                        {curr}{amount.toLocaleString()}
-                                    </span>
+                <div className="grid grid-cols-3 gap-3">
+                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
+                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Подписки / мес</span>
+                        <div className="flex flex-col gap-1">
+                            {Object.entries(subscriptionMonthlyByCurrency).length > 0 ? (
+                                Object.entries(subscriptionMonthlyByCurrency).map(([curr, amount]) => (
+                                    <div key={curr} className="font-bold text-sm text-white whitespace-nowrap">
+                                        {curr}{Number(amount || 0).toLocaleString()}
+                                    </div>
                                 ))
                             ) : (
-                                <span className="text-3xl font-bold text-white">0</span>
+                                <div className="font-bold text-lg text-white">0</div>
                             )}
                         </div>
                     </Card>
-                    <Card className="bg-surface border-white/5 p-6 flex flex-col items-center justify-center text-center">
-                        <span className="text-sm text-text-secondary mb-2">Годовые расходы</span>
-                        <div className="flex flex-wrap gap-4 justify-center">
-                            {Object.entries(totalsByCurrency).length > 0 ? (
-                                Object.entries(totalsByCurrency).map(([curr, amount]) => (
-                                    <span key={curr} className="text-3xl font-bold text-primary">
-                                        {curr}{(amount * 12).toLocaleString()}
-                                    </span>
+
+                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
+                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Расходы / месяц</span>
+                        <div className="flex flex-col gap-1">
+                            {Object.entries(expenseThisMonthByCurrency).length > 0 ? (
+                                Object.entries(expenseThisMonthByCurrency).map(([curr, amount]) => (
+                                    <div key={curr} className="font-bold text-sm text-primary whitespace-nowrap">
+                                        {curr}{Number(amount || 0).toLocaleString()}
+                                    </div>
                                 ))
                             ) : (
-                                <span className="text-3xl font-bold text-primary">0</span>
+                                <div className="font-bold text-lg text-primary">0</div>
+                            )}
+                        </div>
+                    </Card>
+
+                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
+                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Итого / месяц</span>
+                        <div className="flex flex-col gap-1">
+                            {Object.entries(totalThisMonthByCurrency).length > 0 ? (
+                                Object.entries(totalThisMonthByCurrency).map(([curr, amount]) => (
+                                    <div key={curr} className="font-bold text-sm text-white whitespace-nowrap">
+                                        {curr}{Number(amount || 0).toLocaleString()}
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="font-bold text-lg text-white">0</div>
                             )}
                         </div>
                     </Card>
                 </div>
 
                 <Card className="bg-surface border-white/5 p-4">
-                    <h3 className="text-sm font-bold text-white mb-4">Расходы по категориям</h3>
+                    <h3 className="text-sm font-bold text-white mb-4">Подписки по категориям (в месяц)</h3>
                     <div className="h-64 w-full flex flex-col items-center justify-center">
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
                                 <Pie
-                                    data={pieData}
+                                    data={subscriptionByCategory}
                                     innerRadius={50}
                                     outerRadius={90}
                                     paddingAngle={5}
@@ -272,7 +236,7 @@ export default function Analytics() {
                                     label={renderCustomizedLabel}
                                     labelLine={false}
                                 >
-                                    {pieData.map((entry, index) => (
+                                    {subscriptionByCategory.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={entry.color} />
                                     ))}
                                 </Pie>
@@ -296,19 +260,17 @@ export default function Analytics() {
                                         fontSize: '12px',
                                         padding: '2px 0'
                                     }}
-                                    formatter={(value, name) => {
-                                        return [`${primaryCurrency}${value.toLocaleString()}`, name];
-                                    }}
+                                    formatter={(value, name) => [`${primaryCurrency}${Number(value || 0).toLocaleString()}`, name]}
                                 />
                             </PieChart>
                         </ResponsiveContainer>
                         <div className="w-full mt-2 max-h-32 overflow-y-auto">
                             <div className="grid grid-cols-2 gap-2 px-2">
-                                {pieData.map(item => (
+                                {subscriptionByCategory.map(item => (
                                     <div key={item.name} className="flex items-center gap-2 min-w-0">
                                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: item.color }} />
                                         <span className="text-xs text-text-secondary truncate">
-                                            <span className="font-medium">{item.name}:</span> {primaryCurrency}{item.value.toLocaleString()}
+                                            <span className="font-medium">{item.name}:</span> {primaryCurrency}{Number(item.value || 0).toLocaleString()}
                                         </span>
                                     </div>
                                 ))}
@@ -318,7 +280,65 @@ export default function Analytics() {
                 </Card>
 
                 <Card className="bg-surface border-white/5 p-4">
-                    <h3 className="text-sm font-bold text-white mb-4">Расходы по месяцам</h3>
+                    <h3 className="text-sm font-bold text-white mb-4">Расходы по категориям (этот месяц)</h3>
+                    <div className="h-64 w-full flex flex-col items-center justify-center">
+                        <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                                <Pie
+                                    data={expenseByCategoryThisMonth}
+                                    innerRadius={50}
+                                    outerRadius={90}
+                                    paddingAngle={5}
+                                    dataKey="value"
+                                    stroke="none"
+                                    label={renderCustomizedLabel}
+                                    labelLine={false}
+                                >
+                                    {expenseByCategoryThisMonth.map((entry, index) => (
+                                        <Cell key={`cell-exp-${index}`} fill={entry.color} />
+                                    ))}
+                                </Pie>
+                                <Tooltip
+                                    contentStyle={{ 
+                                        backgroundColor: '#1E1E1E', 
+                                        border: '1px solid rgba(255,255,255,0.1)', 
+                                        borderRadius: '8px',
+                                        padding: '8px 12px',
+                                        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+                                        color: '#FFFFFF'
+                                    }}
+                                    labelStyle={{ 
+                                        color: '#FFFFFF', 
+                                        fontSize: '12px',
+                                        marginBottom: '4px',
+                                        fontWeight: 'bold'
+                                    }}
+                                    itemStyle={{ 
+                                        color: '#FFFFFF', 
+                                        fontSize: '12px',
+                                        padding: '2px 0'
+                                    }}
+                                    formatter={(value, name) => [`${primaryCurrency}${Number(value || 0).toLocaleString()}`, name]}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="w-full mt-2 max-h-32 overflow-y-auto">
+                            <div className="grid grid-cols-2 gap-2 px-2">
+                                {expenseByCategoryThisMonth.map(item => (
+                                    <div key={item.name} className="flex items-center gap-2 min-w-0">
+                                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                                        <span className="text-xs text-text-secondary truncate">
+                                            <span className="font-medium">{item.name}:</span> {primaryCurrency}{Number(item.value || 0).toLocaleString()}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+
+                <Card className="bg-surface border-white/5 p-4">
+                    <h3 className="text-sm font-bold text-white mb-4">По месяцам: подписки vs расходы</h3>
                     <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={monthlyCompareData} margin={{ top: 5, right: 5, left: 1, bottom: 1 }}>

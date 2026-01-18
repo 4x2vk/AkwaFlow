@@ -172,6 +172,7 @@ export default function Dashboard() {
                 </div>
             </div>
             <AddSubscriptionModal
+                key={`${isModalOpen ? 'open' : 'closed'}-${editingSubscription?.id ?? 'new'}`}
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 initialData={editingSubscription}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useSubscriptions } from '../../context/SubscriptionContext';
 import { Button } from '../ui/Button';
@@ -9,15 +9,6 @@ import { validateAndSanitizeSubscription } from '../../lib/validation';
 
 export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
     const { addSubscription, updateSubscription, categories } = useSubscriptions();
-    const [formData, setFormData] = useState({
-        name: '',
-        cost: '',
-        currency: 'WON',
-        date: '',
-        category: 'Общие',
-        color: '#a78bfa',
-        billingPeriod: 'monthly' // 'monthly' or 'yearly'
-    });
 
     const currencies = [
         { code: 'WON', symbol: '₩' },
@@ -35,35 +26,34 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
     // Deduplicate just in case
     const uniqueCategories = displayCategories.filter((v, i, a) => a.findIndex(t => (t.name === v.name)) === i);
 
-    useEffect(() => {
+    const initialFormData = useMemo(() => {
         if (initialData) {
-            // Determine billing period from cycle
-            let billingPeriod = 'monthly';
-            if (initialData.cycle && initialData.cycle.includes('год')) {
+            let billingPeriod = initialData.billingPeriod || 'monthly';
+            if (!initialData.billingPeriod && initialData.cycle && initialData.cycle.includes('год')) {
                 billingPeriod = 'yearly';
             }
-            
-            setFormData({
-                name: initialData.name,
-                cost: initialData.cost,
+            return {
+                name: initialData.name || '',
+                cost: initialData.cost ?? '',
                 currency: initialData.currency || 'WON',
                 date: initialData.nextPaymentDate || '',
                 category: initialData.category || 'Общие',
                 color: initialData.color || '#a78bfa',
-                billingPeriod: billingPeriod
-            });
-        } else {
-            setFormData({
-                name: '',
-                cost: '',
-                currency: 'WON',
-                date: '',
-                category: 'Общие',
-                color: '#a78bfa',
-                billingPeriod: 'monthly'
-            });
+                billingPeriod
+            };
         }
-    }, [initialData, isOpen]);
+        return {
+            name: '',
+            cost: '',
+            currency: 'WON',
+            date: '',
+            category: 'Общие',
+            color: '#a78bfa',
+            billingPeriod: 'monthly'
+        };
+    }, [initialData]);
+
+    const [formData, setFormData] = useState(() => initialFormData);
 
     if (!isOpen) return null;
 

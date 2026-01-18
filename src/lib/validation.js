@@ -171,6 +171,7 @@ export function validateAndSanitizeSubscription(data) {
         currencySymbol: data.currencySymbol || '₽',
         nextPaymentDate: data.nextPaymentDate || null,
         billingPeriod: data.billingPeriod || 'monthly',
+        cycle: data.cycle ? sanitizeString(data.cycle) : (data.billingPeriod === 'yearly' ? 'Ежегодно' : 'Ежемесячно'),
         color: data.color || '#a78bfa',
         icon: data.icon || (data.name ? data.name[0].toUpperCase() : '?'),
         iconUrl: data.iconUrl || null

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -23,18 +23,14 @@ function isLightColor(hexColor) {
     return luminance > 0.5;
 }
 
-export function SubscriptionItem({ icon, iconUrl, name, cycle, cost, color, currency = '₩', currencySymbol, onDelete, onClick }) {
-    const [imageError, setImageError] = useState(false);
+export function SubscriptionItem({ icon, iconUrl, name, cycle, cost, color, currency = '₩', currencySymbol, billingPeriod, onDelete, onClick }) {
+    const [failedIconUrl, setFailedIconUrl] = useState(null);
     const displayCurrency = currencySymbol || currency;
     const bgColor = color || '#333';
     const isLight = isLightColor(bgColor);
     const textColorClass = isLight ? 'text-black' : 'text-white';
     const displayIcon = icon || name[0];
-    
-    // Сбрасываем ошибку при изменении iconUrl
-    useEffect(() => {
-        setImageError(false);
-    }, [iconUrl]);
+    const periodLabel = billingPeriod === 'yearly' ? '/год' : '/мес';
     
     return (
         <Card
@@ -46,12 +42,12 @@ export function SubscriptionItem({ icon, iconUrl, name, cycle, cost, color, curr
                     className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold ${textColorClass} shadow-lg overflow-hidden`}
                     style={{ backgroundColor: bgColor }}
                 >
-                    {iconUrl && !imageError ? (
+                    {iconUrl && failedIconUrl !== iconUrl ? (
                         <img 
                             src={iconUrl} 
                             alt={name}
                             className="w-full h-full object-cover"
-                            onError={() => setImageError(true)}
+                            onError={() => setFailedIconUrl(iconUrl)}
                         />
                     ) : (
                         displayIcon
@@ -66,7 +62,7 @@ export function SubscriptionItem({ icon, iconUrl, name, cycle, cost, color, curr
             <div className="flex items-center gap-4">
                 <div className="text-right">
                     <div className="font-bold text-white text-base">{displayCurrency}{cost.toLocaleString()}</div>
-                    <div className="text-xs text-text-secondary">/мес</div>
+                    <div className="text-xs text-text-secondary">{periodLabel}</div>
                 </div>
                 <button
                     className="text-text-secondary hover:text-red-500 transition-colors p-2"
