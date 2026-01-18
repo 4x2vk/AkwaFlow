@@ -7,12 +7,14 @@ import { Link } from 'react-router-dom';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { useAppUpdate } from '../../lib/appUpdate';
+import { isDevMode } from '../../lib/devMode';
 
 export function Layout({ children }) {
     const { user } = useAuth();
     const { isAdmin } = useAdmin();
     const [logoError, setLogoError] = useState(false);
     const { updateAvailable, infoText, applyUpdate } = useAppUpdate();
+    const devMode = isDevMode();
     return (
         <div className="min-h-screen bg-background text-text flex flex-col">
             <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-white/5">
@@ -40,15 +42,22 @@ export function Layout({ children }) {
                             AkwaFlow
                         </h1>
                     </div>
-                    {isAdmin && (
-                        <Link
-                            to="/admin"
-                            className="p-2 hover:bg-surface-hover rounded-lg transition-colors"
-                            title="Админ-панель"
-                        >
-                            <Shield className="w-5 h-5 text-primary" />
-                        </Link>
-                    )}
+                    <div className="flex items-center gap-2">
+                        {devMode && (
+                            <div className="px-2 py-1 bg-yellow-500/20 border border-yellow-500/30 rounded text-[10px] font-bold text-yellow-400 uppercase tracking-wider">
+                                DEV
+                            </div>
+                        )}
+                        {isAdmin && (
+                            <Link
+                                to="/admin"
+                                className="p-2 hover:bg-surface-hover rounded-lg transition-colors"
+                                title="Админ-панель"
+                            >
+                                <Shield className="w-5 h-5 text-primary" />
+                            </Link>
+                        )}
+                    </div>
                 </div>
             </header>
 
