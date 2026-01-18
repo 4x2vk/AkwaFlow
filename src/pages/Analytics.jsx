@@ -17,6 +17,14 @@ export default function Analytics() {
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
 
+    const toYearlyByCurrency = (monthlyByCurrency) => {
+        const out = {};
+        Object.entries(monthlyByCurrency).forEach(([sym, amount]) => {
+            out[sym] = Number(amount || 0) * 12;
+        });
+        return out;
+    };
+
     const getMonthLabels = () => ([
         { name: 'Янв', month: 0 },
         { name: 'Фев', month: 1 },
@@ -64,6 +72,31 @@ export default function Analytics() {
         return combined;
     }, [expenseThisMonthByCurrency, subscriptionMonthlyByCurrency]);
 
+    const expenseThisYearByCurrency = useMemo(() => {
+        return expenses.reduce((acc, e) => {
+            if (!e?.spentAt) return acc;
+            const d = new Date(e.spentAt);
+            if (isNaN(d.getTime())) return acc;
+            if (d.getFullYear() !== currentYear) return acc;
+            if (d.getMonth() > currentMonth) return acc; // don't count future months
+            const sym = e.currencySymbol || '₩';
+            acc[sym] = (acc[sym] || 0) + Number(e.amount || 0);
+            return acc;
+        }, {});
+    }, [currentMonth, currentYear, expenses]);
+
+    const subscriptionYearlyByCurrency = useMemo(() => {
+        return toYearlyByCurrency(subscriptionMonthlyByCurrency);
+    }, [subscriptionMonthlyByCurrency]);
+
+    const totalThisYearByCurrency = useMemo(() => {
+        const combined = { ...expenseThisYearByCurrency };
+        Object.entries(subscriptionYearlyByCurrency).forEach(([sym, amount]) => {
+            combined[sym] = (combined[sym] || 0) + Number(amount || 0);
+        });
+        return combined;
+    }, [expenseThisYearByCurrency, subscriptionYearlyByCurrency]);
+
     const primaryCurrency = useMemo(() => {
         const allSyms = Object.keys(subscriptionMonthlyByCurrency);
         if (allSyms.length > 0) return allSyms[0];
@@ -93,7 +126,9 @@ export default function Analytics() {
     }, [expenses, currentYear]);
 
     const monthlyCompareData = useMemo(() => {
-        return getMonthLabels().map((m) => {
+        return getMonthLabels()
+            .filter((m) => m.month <= currentMonth)
+            .map((m) => {
             const exp = expenseMonthlyTotals.find((x) => x.month === m.month)?.expenses || 0;
             return {
                 name: m.name,
@@ -103,7 +138,7 @@ export default function Analytics() {
                 total: subscriptionMonthlyTotal + exp
             };
         });
-    }, [expenseMonthlyTotals, subscriptionMonthlyTotal]);
+    }, [currentMonth, expenseMonthlyTotals, subscriptionMonthlyTotal]);
 
     const subscriptionByCategory = useMemo(() => {
         const map = {};
@@ -176,7 +211,7 @@ export default function Analytics() {
             <div className="space-y-6">
                 <div className="grid grid-cols-3 gap-3">
                     <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Подписки / мес</span>
+                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Стабильные / мес</span>
                         <div className="flex flex-col gap-1">
                             {Object.entries(subscriptionMonthlyByCurrency).length > 0 ? (
                                 Object.entries(subscriptionMonthlyByCurrency).map(([curr, amount]) => (
@@ -221,8 +256,55 @@ export default function Analytics() {
                     </Card>
                 </div>
 
+                <div className="grid grid-cols-3 gap-3">
+                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
+                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Стабильные / год</span>
+                        <div className="flex flex-col gap-1">
+                            {Object.entries(subscriptionYearlyByCurrency).length > 0 ? (
+                                Object.entries(subscriptionYearlyByCurrency).map(([curr, amount]) => (
+                                    <div key={curr} className="font-bold text-sm text-white whitespace-nowrap">
+                                        {curr}{Number(amount || 0).toLocaleString()}
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="font-bold text-lg text-white">0</div>
+                            )}
+                        </div>
+                    </Card>
+
+                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
+                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Расходы / год</span>
+                        <div className="flex flex-col gap-1">
+                            {Object.entries(expenseThisYearByCurrency).length > 0 ? (
+                                Object.entries(expenseThisYearByCurrency).map(([curr, amount]) => (
+                                    <div key={curr} className="font-bold text-sm text-primary whitespace-nowrap">
+                                        {curr}{Number(amount || 0).toLocaleString()}
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="font-bold text-lg text-primary">0</div>
+                            )}
+                        </div>
+                    </Card>
+
+                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
+                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Итого / год</span>
+                        <div className="flex flex-col gap-1">
+                            {Object.entries(totalThisYearByCurrency).length > 0 ? (
+                                Object.entries(totalThisYearByCurrency).map(([curr, amount]) => (
+                                    <div key={curr} className="font-bold text-sm text-white whitespace-nowrap">
+                                        {curr}{Number(amount || 0).toLocaleString()}
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="font-bold text-lg text-white">0</div>
+                            )}
+                        </div>
+                    </Card>
+                </div>
+
                 <Card className="bg-surface border-white/5 p-4">
-                    <h3 className="text-sm font-bold text-white mb-4">Подписки по категориям (в месяц)</h3>
+                    <h3 className="text-sm font-bold text-white mb-4">Стабильные расходы по категориям (в месяц)</h3>
                     <div className="h-64 w-full flex flex-col items-center justify-center">
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
@@ -338,7 +420,7 @@ export default function Analytics() {
                 </Card>
 
                 <Card className="bg-surface border-white/5 p-4">
-                    <h3 className="text-sm font-bold text-white mb-4">По месяцам: подписки vs расходы</h3>
+                    <h3 className="text-sm font-bold text-white mb-4">По месяцам (до текущего): стабильные vs расходы</h3>
                     <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={monthlyCompareData} margin={{ top: 5, right: 5, left: 1, bottom: 1 }}>
@@ -395,7 +477,7 @@ export default function Analytics() {
                                     }}
                                     formatter={(value, name) => {
                                         const labelMap = {
-                                            subscriptions: 'Подписки',
+                                            subscriptions: 'Стабильные',
                                             expenses: 'Расходы',
                                             total: 'Итого'
                                         };
