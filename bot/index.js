@@ -157,6 +157,74 @@ const detectCurrency = (input) => {
     return { code: 'WON', symbol: '₩' };
 };
 
+// Text normalization (helps understand “same meaning” phrases)
+const normalizeText = (input) => {
+    return String(input || '')
+        .replace(/[“”«»"]/g, ' ')
+        .replace(/[’‘]/g, "'")
+        .replace(/\u00A0/g, ' ')
+        .replace(/ё/gi, 'е')
+        .replace(/[^\p{L}\p{N}\s.,;:()\-+$/₽₩₸€]/gu, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+};
+
+// Intent detection (RU/EN + synonyms)
+const detectIntent = (rawText) => {
+    const t = normalizeText(rawText).toLowerCase();
+    const has = (re) => re.test(t);
+
+    if (has(/^\/start\b/)) return 'start';
+    if (has(/\b(помощь|help|хелп|что ты умеешь|как пользоваться)\b/)) return 'help';
+    if (has(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/)) return 'remove';
+    if (has(/\b(добав(ь|ить|ляй|им)|создай|запиши|оформи|подключи|add)\b/)) return 'add';
+    if (has(/\b(мои подписки|список подписок|покажи подписки|показать подписки|список|list|subscriptions)\b/)) return 'list';
+    if (has(/\b(привет|hello|hi)\b/)) return 'greet';
+
+    // Often in voice: user says “нетфликс 1000 тг 17 февраля” without “добавь”
+    if (/\d/.test(t) && (/[₽₩₸$]/.test(t) || /\b(rub|usd|kzt|krw|won|руб|дол|тен|тг|вон)\b/.test(t))) return 'add';
+
+    return 'unknown';
+};
+
+const buildHelpMessage = () => {
+    return [
+        'Я помогу управлять подписками 🙂 Вот примеры:',
+        '',
+        '• «Добавь Netflix 10000 вон 12 числа»',
+        '• «Добавь Spotify 5$ завтра»',
+        '• «Добавь YouTube 1000 тг 17 февраля»',
+        '• «Удали Netflix»',
+        '• «Мои подписки»',
+        '',
+        'Если чего-то не хватит (суммы/даты) — я уточню.'
+    ].join('\n');
+};
+
+// Simple conversation state (in-memory). Enough for “ask follow-up question”.
+// NOTE: If you run multiple bot instances, move this to Firestore/Redis.
+const PENDING_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const pendingByChat = new Map(); // chatId -> { type, data, step, createdAt }
+
+const clearPending = (chatId) => {
+    pendingByChat.delete(String(chatId));
+};
+
+const getPending = (chatId) => {
+    const key = String(chatId);
+    const p = pendingByChat.get(key);
+    if (!p) return null;
+    if (Date.now() - p.createdAt > PENDING_TTL_MS) {
+        pendingByChat.delete(key);
+        return null;
+    }
+    return p;
+};
+
+const setPending = (chatId, pending) => {
+    pendingByChat.set(String(chatId), { ...pending, createdAt: Date.now() });
+};
+
 // Date Helper - Parse date from text like "12 числа" or "12"
 const parseDate = (text) => {
     // Try to find date pattern: "12 числа", "12 число", "12-го", "12-е", or just "12"
@@ -188,6 +256,85 @@ const parseDate = (text) => {
         date: nextMonth.toISOString(),
         cycle: 'Каждый 1 числа'
     };
+};
+
+// Enhanced date parser: “17 февраля”, “17.02”, “завтра”, “через 3 дня”
+const parseDateEnhanced = (rawText) => {
+    const text = normalizeText(rawText).toLowerCase();
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    if (/\bсегодня\b/.test(text)) {
+        return { date: new Date(now).toISOString(), cycle: `Каждый ${now.getDate()} числа` };
+    }
+    if (/\bзавтра\b/.test(text)) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 1);
+        return { date: d.toISOString(), cycle: `Каждый ${d.getDate()} числа` };
+    }
+    if (/\bпослезавтра\b/.test(text)) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 2);
+        return { date: d.toISOString(), cycle: `Каждый ${d.getDate()} числа` };
+    }
+    const inDays = text.match(/\bчерез\s+(\d{1,3})\s*(дн(я|ей)?|день)\b/);
+    if (inDays) {
+        const days = parseInt(inDays[1], 10);
+        const d = new Date(now);
+        d.setDate(d.getDate() + Math.max(0, days));
+        return { date: d.toISOString(), cycle: `Каждый ${d.getDate()} числа` };
+    }
+
+    // dd.mm[.yyyy] or dd/mm[/yyyy]
+    const dm = text.match(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/);
+    if (dm) {
+        const day = parseInt(dm[1], 10);
+        const month = parseInt(dm[2], 10) - 1;
+        const yearRaw = dm[3];
+        let year = now.getFullYear();
+        if (yearRaw) {
+            const y = parseInt(yearRaw, 10);
+            year = y < 100 ? 2000 + y : y;
+        }
+        const d = new Date(year, month, day);
+        if (!isNaN(d.getTime())) {
+            if (!yearRaw && d < now) d.setFullYear(d.getFullYear() + 1);
+            return { date: d.toISOString(), cycle: `Каждый ${day} числа` };
+        }
+    }
+
+    // “17 февраля” / “17 фев”
+    const monthMap = {
+        янв: 0, фев: 1, мар: 2, апр: 3, май: 4, июн: 5, июл: 6, авг: 7, сен: 8, окт: 9, ноя: 10, дек: 11
+    };
+    const m = text.match(/\b(\d{1,2})\s+(янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:т[а])?|апр(?:ел[ья])?|ма[йя]|июн(?:[ья])?|июл(?:[ья])?|авг(?:уст[а])?|сен(?:тябр[ья])?|окт(?:ябр[ья])?|ноя(?:бр[ья])?|дек(?:ябр[ья])?)\b/);
+    if (m) {
+        const day = parseInt(m[1], 10);
+        const token = m[2].slice(0, 3);
+        const month = monthMap[token];
+        if (month !== undefined) {
+            const d = new Date(now.getFullYear(), month, day);
+            if (d < now) d.setFullYear(d.getFullYear() + 1);
+            return { date: d.toISOString(), cycle: `Каждый ${day} числа` };
+        }
+    }
+
+    // fallback
+    return parseDate(text);
+};
+
+const detectBillingPeriod = (rawText) => {
+    const t = normalizeText(rawText).toLowerCase();
+    if (/\b(год|годовая|ежегодно|раз в год|annual|yearly)\b/.test(t)) return 'yearly';
+    return 'monthly';
+};
+
+const extractCost = (rawText) => {
+    const text = normalizeText(rawText);
+    const m = text.match(/(\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)/);
+    if (!m) return null;
+    const n = parseFloat(m[1].replace(/\s|\u00A0/g, '').replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
 };
 
 // Function to download audio file from Telegram
@@ -309,19 +456,217 @@ const transcribeAudio = async (audioFilePath) => {
 
 // Common function to process text commands (extracted from message handler)
 const processTextCommand = async (chatId, text) => {
+    const rawText = String(text || '');
+    const normalized = normalizeText(rawText);
+    const intent = detectIntent(normalized);
+
     // Ensure user document exists when they interact
     await ensureUserExists(chatId);
 
-    // 1. ADD Command: "Добавь Netflix за 999 вон 12 числа" OR "Добавь Netflix 999 вон"
-    const addMatch = text.match(/(?:Добавь|Add)\s+(.+?)\s+(?:за|for)?\s*(\d+(?:[.,]\d+)?)\s*(.+)/i);
+    // Global cancel (works during any pending flow)
+    if (/\b(отмена|cancel|стоп|stop)\b/i.test(normalized) || /^\/cancel\b/i.test(rawText)) {
+        clearPending(chatId);
+        bot.sendMessage(chatId, 'Окей, отменил. Если захотите — начнём заново 🙂');
+        return;
+    }
 
-    if (addMatch) {
-        const name = addMatch[1].trim();
-        const cost = parseFloat(addMatch[2].replace(',', '.'));
-        const restOfText = addMatch[3].trim();
-        
-        const { code, symbol } = detectCurrency(restOfText);
-        const { date, cycle } = parseDate(restOfText);
+    // If we are in a follow-up flow, handle it BEFORE intent routing
+    const pending = getPending(chatId);
+    if (pending) {
+        // allow user to ask help anytime
+        if (intent === 'help' || intent === 'start') {
+            bot.sendMessage(chatId, buildHelpMessage());
+            return;
+        }
+
+        if (pending.type === 'add') {
+            const current = pending.data || {};
+
+            if (pending.step === 'ask_name') {
+                const name = normalized.trim();
+                if (!name || name.length < 2) {
+                    bot.sendMessage(chatId, 'Название должно быть хотя бы 2 символа 🙂 Как называется сервис?');
+                    return;
+                }
+                current.name = name;
+                // next ask cost
+                setPending(chatId, { type: 'add', step: 'ask_cost', data: current });
+                bot.sendMessage(chatId, `Окей, *${current.name}*. А какая стоимость? Например: «1000 тг».`, { parse_mode: 'Markdown' });
+                return;
+            }
+
+            if (pending.step === 'ask_cost') {
+                const cost = extractCost(normalized);
+                if (cost === null) {
+                    bot.sendMessage(chatId, 'Не увидел сумму 😅 Напишите число, например: «1000 тг» или «5$».');
+                    return;
+                }
+                const { code, symbol } = detectCurrency(normalized);
+                current.cost = cost;
+                current.currency = code;
+                current.currencySymbol = symbol;
+                // ask date (optional)
+                setPending(chatId, { type: 'add', step: 'ask_date', data: current });
+                bot.sendMessage(
+                    chatId,
+                    'Когда следующий платеж?\nНапример: «12 числа», «17 февраля», «завтра», «17.02».\nЕсли дата не важна — напишите «пропустить».'
+                );
+                return;
+            }
+
+            if (pending.step === 'ask_date') {
+                if (/\b(пропусти|пропустить|skip)\b/i.test(normalized)) {
+                    // default: use legacy default (next month 1st)
+                    const { date, cycle } = parseDateEnhanced(''); // fallback
+                    current.nextPaymentDate = date;
+                    current.cycle = cycle;
+                } else {
+                    const { date, cycle } = parseDateEnhanced(normalized);
+                    current.nextPaymentDate = date;
+                    current.cycle = cycle;
+                }
+
+                // finalize add
+                try {
+                    const billingPeriod = detectBillingPeriod(normalized);
+                    const userDocRef = db.collection('users').doc(String(chatId));
+                    const subscriptionData = {
+                        name: current.name,
+                        cost: current.cost,
+                        currency: current.currency || 'WON',
+                        currencySymbol: current.currencySymbol || '₩',
+                        billingPeriod,
+                        cycle: current.cycle || 'Каждый 1 числа',
+                        nextPaymentDate: current.nextPaymentDate,
+                        category: 'Общие',
+                        color: '#a78bfa',
+                        icon: String(current.name || '?')[0].toUpperCase(),
+                        createdAt: admin.firestore.FieldValue.serverTimestamp()
+                    };
+
+                    if (!subscriptionData.name || subscriptionData.name.length > 100) {
+                        bot.sendMessage(chatId, 'Название слишком длинное 😅 Давайте короче (до 100 символов).');
+                        return;
+                    }
+                    if (isNaN(subscriptionData.cost) || subscriptionData.cost < 0 || subscriptionData.cost > 1000000000) {
+                        bot.sendMessage(chatId, 'Стоимость некорректная. Можно число от 0 до 1,000,000,000 🙂');
+                        return;
+                    }
+
+                    await userDocRef.collection('subscriptions').add(subscriptionData);
+                    clearPending(chatId);
+
+                    const dateStr = subscriptionData.nextPaymentDate
+                        ? new Date(subscriptionData.nextPaymentDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+                        : '—';
+                    bot.sendMessage(
+                        chatId,
+                        `✅ Готово! Добавил подписку "${subscriptionData.name}" на сумму ${subscriptionData.currencySymbol}${Number(subscriptionData.cost).toLocaleString()}.\nСледующий платеж: ${dateStr}. 😊`
+                    );
+                    return;
+                } catch (e) {
+                    console.error('[BOT] Pending add finalize error:', e);
+                    clearPending(chatId);
+                    bot.sendMessage(chatId, '😔 Не получилось сохранить подписку. Попробуйте, пожалуйста, ещё раз чуть позже.');
+                    return;
+                }
+            }
+        }
+
+        if (pending.type === 'remove') {
+            const options = pending.data?.options || [];
+            const answer = normalized.trim();
+            // allow “1”, “2”, or exact name
+            const idx = parseInt(answer, 10);
+            let chosen = null;
+            if (!isNaN(idx) && idx >= 1 && idx <= options.length) {
+                chosen = options[idx - 1];
+            } else {
+                chosen = options.find(o => String(o.name || '').toLowerCase() === answer.toLowerCase()) || null;
+            }
+            if (!chosen) {
+                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер (например 1) или точное название из списка.');
+                return;
+            }
+            try {
+                await chosen.ref.delete();
+                clearPending(chatId);
+                bot.sendMessage(chatId, `✅ Готово! Подписка "${chosen.name}" удалена. 😊`);
+                return;
+            } catch (e) {
+                console.error('[BOT] Pending remove error:', e);
+                clearPending(chatId);
+                bot.sendMessage(chatId, '😔 Не получилось удалить подписку. Попробуйте позже.');
+                return;
+            }
+        }
+    }
+
+    // HELP / START / GREET
+    if (intent === 'start' || intent === 'help') {
+        bot.sendMessage(chatId, buildHelpMessage());
+        return;
+    }
+    if (intent === 'greet') {
+        bot.sendMessage(chatId, `Привет! 👋 Рад тебя видеть.\n\n${buildHelpMessage()}`);
+        return;
+    }
+
+    // LIST (more phrases handled by detectIntent)
+    if (intent === 'list') {
+        try {
+            const snapshot = await db.collection('users').doc(String(chatId)).collection('subscriptions').get();
+            if (snapshot.empty) {
+                bot.sendMessage(chatId, '📭 Похоже, у вас пока нет подписок.\nХотите добавить первую? Напишите: «Добавь Netflix 10000 вон 12 числа» 🙂');
+                return;
+            }
+
+            let response = '📋 *Ваши подписки:*\n\n';
+            snapshot.docs.forEach(doc => {
+                const data = doc.data();
+                const sym = data.currencySymbol || '₩';
+                response += `• *${data.name}*: ${sym}${Number(data.cost || 0).toLocaleString()}\n`;
+            });
+            bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
+            return;
+        } catch (e) {
+            console.error('[BOT] List error:', e);
+            bot.sendMessage(chatId, '😔 Извините, не удалось получить список подписок. Попробуйте позже. 🙏');
+            return;
+        }
+    }
+
+    // ADD (robust parsing, supports different word order)
+    if (intent === 'add') {
+        const cost = extractCost(normalized);
+        const { code, symbol } = detectCurrency(normalized);
+        const billingPeriod = detectBillingPeriod(normalized);
+        const { date, cycle } = parseDateEnhanced(normalized);
+
+        // Extract service name by stripping common words, numbers, currency and date parts
+        let nameCandidate = normalized;
+        nameCandidate = nameCandidate.replace(/\b(добав(ь|ить|ляй|им)|создай|запиши|оформи|подключи|add|за|for|на сумму|сумма|стоимость)\b/gi, ' ');
+        nameCandidate = nameCandidate.replace(/(\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)/g, ' ');
+        nameCandidate = nameCandidate.replace(/[₽₩₸$]/g, ' ');
+        nameCandidate = nameCandidate.replace(/\b(rub|usd|kzt|krw|won|руб(ль|ля|лей)?|доллар(а|ов)?|бакс(ов)?|тенге|тенг|тг|вон(а|ы)?)\b/gi, ' ');
+        nameCandidate = nameCandidate.replace(/\b(сегодня|завтра|послезавтра|через)\b/gi, ' ');
+        nameCandidate = nameCandidate.replace(/\b(\d{1,2})\s*(числа|число|го|е)\b/gi, ' ');
+        nameCandidate = nameCandidate.replace(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/g, ' ');
+        nameCandidate = nameCandidate.replace(/\b(\d{1,2})\s+(янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:т[а])?|апр(?:ел[ья])?|ма[йя]|июн(?:[ья])?|июл(?:[ья])?|авг(?:уст[а])?|сен(?:тябр[ья])?|окт(?:ябр[ья])?|ноя(?:бр[ья])?|дек(?:ябр[ья])?)\b/gi, ' ');
+        nameCandidate = nameCandidate.replace(/\s+/g, ' ').trim();
+
+        const name = nameCandidate;
+
+        if (!name || name.length < 2) {
+            setPending(chatId, { type: 'add', step: 'ask_name', data: {} });
+            bot.sendMessage(chatId, 'Подскажите, пожалуйста, *какой сервис* добавить? 🙂\nНапример: «Netflix».', { parse_mode: 'Markdown' });
+            return;
+        }
+        if (cost === null) {
+            setPending(chatId, { type: 'add', step: 'ask_cost', data: { name } });
+            bot.sendMessage(chatId, `Окей, добавим *${name}* 🙂\nСкажите, пожалуйста, *стоимость* (например: «1000 тг» или «5$»).`, { parse_mode: 'Markdown' });
+            return;
+        }
 
         try {
             const userDocRef = db.collection('users').doc(String(chatId));
@@ -330,101 +675,92 @@ const processTextCommand = async (chatId, text) => {
                 cost,
                 currency: code,
                 currencySymbol: symbol,
-                cycle: cycle,
+                billingPeriod,
+                cycle: billingPeriod === 'yearly'
+                    ? `Ежегодно${date ? `, ${new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}` : ''}`
+                    : cycle,
                 nextPaymentDate: date,
                 category: 'Общие',
                 color: '#a78bfa',
                 icon: name[0].toUpperCase(),
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             };
-            
-            // Базовая валидация данных
-            if (!name || name.length === 0 || name.length > 100) {
-                bot.sendMessage(chatId, '❌ Некорректное название подписки (должно быть от 1 до 100 символов)');
+
+            if (name.length > 100) {
+                bot.sendMessage(chatId, 'Похоже, название слишком длинное 😅 Давайте короче (до 100 символов).');
                 return;
             }
             if (isNaN(cost) || cost < 0 || cost > 1000000000) {
-                bot.sendMessage(chatId, '❌ Некорректная стоимость (должна быть от 0 до 1,000,000,000)');
+                bot.sendMessage(chatId, 'Похоже, стоимость некорректная. Можно число от 0 до 1,000,000,000 🙂');
                 return;
             }
-            
-            // Не логируем полные данные для безопасности
-            console.log(`[BOT] Adding subscription for user ${chatId}: name="${name}", cost=${cost}`);
+
+            console.log(`[BOT] ADD user=${chatId} name="${name}" cost=${cost} ${code}`);
             await userDocRef.collection('subscriptions').add(subscriptionData);
-            
-            const dateStr = new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-            bot.sendMessage(chatId, `✅ Отлично! Добавил подписку "${name}" на сумму ${symbol}${cost.toLocaleString()}. Следующий платеж: ${dateStr}. 🎉`);
+
+            const dateStr = date ? new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—';
+            bot.sendMessage(chatId, `✅ Готово! Добавил подписку "${name}" на сумму ${symbol}${cost.toLocaleString()}.\nСледующий платеж: ${dateStr}. 😊`);
             return;
         } catch (e) {
             console.error('[BOT] Error adding subscription:', e);
-            bot.sendMessage(chatId, '❌ Ошибка при добавлении в базу данных.');
+            bot.sendMessage(chatId, '😔 Не получилось добавить подписку из‑за ошибки. Попробуйте, пожалуйста, ещё раз чуть позже.');
             return;
         }
     }
 
-    // 2. REMOVE Command: "Удали Spotify"
-    const removeMatch = text.match(/(?:Удали|Удалить|Remove|Delete)\s+(.+)/i);
-    if (removeMatch) {
-        const nameToRemove = removeMatch[1].trim();
+    // REMOVE (will be improved further, but already route here)
+    if (intent === 'remove') {
+        const t = normalizeText(normalized);
+        let nameToRemove = t.replace(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/gi, ' ').trim();
+        if (!nameToRemove) {
+            bot.sendMessage(chatId, 'Какую подписку удалить? Напишите, например: «Удали Netflix». 🙂');
+            return;
+        }
         try {
-            const snapshot = await db.collection('users').doc(String(chatId)).collection('subscriptions')
-                .where('name', '==', nameToRemove)
-                .get();
-
+            const col = db.collection('users').doc(String(chatId)).collection('subscriptions');
+            const snapshot = await col.get();
             if (snapshot.empty) {
-                bot.sendMessage(chatId, `😔 Извините, но подписка "${nameToRemove}" не найдена. Пожалуйста, проверьте название в списке "Мои подписки". 💡`);
+                bot.sendMessage(chatId, 'У вас пока нет подписок — удалять нечего 🙂');
                 return;
             }
 
-            const batch = db.batch();
-            snapshot.docs.forEach(doc => {
-                batch.delete(doc.ref);
-            });
-            await batch.commit();
+            const wanted = nameToRemove.toLowerCase();
+            const matches = snapshot.docs
+                .map(d => ({ ref: d.ref, data: d.data(), id: d.id }))
+                .filter(({ data }) => {
+                    const n = String(data.name || '').toLowerCase();
+                    return n === wanted || n.includes(wanted) || wanted.includes(n);
+                });
 
-            bot.sendMessage(chatId, `✅ Готово! Подписка "${nameToRemove}" успешно удалена. 😊`);
+            if (matches.length === 0) {
+                bot.sendMessage(chatId, `😔 Не нашёл подписку "${nameToRemove}".\nМогу показать список: напишите «Мои подписки».`);
+                return;
+            }
+            if (matches.length > 1) {
+                const list = matches.slice(0, 10).map((m, i) => `${i + 1}) ${m.data.name}`).join('\n');
+                setPending(chatId, {
+                    type: 'remove',
+                    step: 'choose_one',
+                    data: {
+                        options: matches.slice(0, 10).map(m => ({ name: m.data.name, ref: m.ref }))
+                    }
+                });
+                bot.sendMessage(chatId, `Нашёл несколько вариантов. Выберите номер:\n\n${list}\n\n(или напишите «отмена»)`);
+                return;
+            }
+
+            await matches[0].ref.delete();
+            bot.sendMessage(chatId, `✅ Готово! Подписка "${matches[0].data.name}" удалена. 😊`);
             return;
         } catch (e) {
-            console.error(e);
+            console.error('[BOT] Remove error:', e);
             bot.sendMessage(chatId, '😔 Извините, произошла ошибка при удалении подписки. Попробуйте еще раз позже. 🙏');
             return;
         }
     }
 
-    // 3. LIST Command: "Мои подписки"
-    if (text.match(/(?:Мои подписки|Список|List)/i)) {
-        try {
-            const snapshot = await db.collection('users').doc(String(chatId)).collection('subscriptions').get();
-
-            if (snapshot.empty) {
-                bot.sendMessage(chatId, '📭 У вас пока нет активных подписок. Хотите добавить первую? Просто напишите: "Добавь Netflix 10000 вон 12 числа" 😊');
-                return;
-            }
-
-            let response = '📋 *Ваши активные подписки:*\n\n';
-            snapshot.docs.forEach(doc => {
-                const data = doc.data();
-                const sym = data.currencySymbol || '₩';
-                response += `• *${data.name}*: ${sym}${data.cost}\n`;
-            });
-
-            bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
-            return;
-        } catch (e) {
-            console.error(e);
-            bot.sendMessage(chatId, '😔 Извините, не удалось получить список подписок. Попробуйте позже. 🙏');
-            return;
-        }
-    }
-
-    // 4. Greetings
-    if (text.match(/(?:Привет|Hello|Hi|Start)/i)) {
-        bot.sendMessage(chatId, `Привет! 👋 Рад тебя видеть! Я помогу управлять твоими подписками. 😊\n\nПросто напиши или скажи: "Добавь Apple Music 1000 руб 15 числа"`);
-        return;
-    }
-
-    // Default Fallback
-    bot.sendMessage(chatId, '🤔 Извините, я не совсем понял команду. Попробуйте один из вариантов:\n\n• "Добавь Netflix 10000 вон 12 числа"\n• "Удали Spotify"\n• "Мои подписки"\n\nИли просто скажите это голосовым сообщением! 🎤');
+    // Default fallback
+    bot.sendMessage(chatId, `🤔 Я мог не совсем правильно понять сообщение.\n\n${buildHelpMessage()}`);
 };
 
 // Helper function to ensure user document exists
