@@ -853,6 +853,16 @@ bot.on('voice', async (msg) => {
         return;
     }
 
+    // Cost control: ignore too long voice messages (prevents unexpected OpenAI spend)
+    const maxVoiceSeconds = Number(process.env.MAX_VOICE_SECONDS || 60);
+    if (voice?.duration && Number.isFinite(maxVoiceSeconds) && voice.duration > maxVoiceSeconds) {
+        bot.sendMessage(
+            chatId,
+            `⏱️ Голосовое слишком длинное (${voice.duration} сек).\nПожалуйста, отправьте до ${maxVoiceSeconds} сек или напишите текстом.`
+        );
+        return;
+    }
+
     let processingMsg = null;
     let audioFilePath = null;
 
@@ -869,7 +879,8 @@ bot.on('voice', async (msg) => {
         // Transcribe speech
         console.log(`[BOT] Transcribing audio with OpenAI Whisper...`);
         const transcribedText = await transcribeAudio(audioFilePath);
-        console.log(`[BOT] Transcription result: "${transcribedText}"`);
+        // SECURITY: do not log user content, only log metadata
+        console.log(`[BOT] Transcription ok (${String(transcribedText || '').length} chars)`);
         
         // Delete temporary file
         try {
