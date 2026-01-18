@@ -7,12 +7,14 @@ import { Link } from 'react-router-dom';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { useAppUpdate } from '../../lib/appUpdate';
+import { isDevMode } from '../../lib/devMode';
 
 export function Layout({ children }) {
     const { user } = useAuth();
     const { isAdmin } = useAdmin();
     const [logoError, setLogoError] = useState(false);
     const { updateAvailable, infoText, applyUpdate } = useAppUpdate();
+    const devMode = isDevMode();
     return (
         <div className="min-h-screen bg-background text-text flex flex-col">
             <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-white/5">
@@ -40,15 +42,22 @@ export function Layout({ children }) {
                             AkwaFlow
                         </h1>
                     </div>
-                    {isAdmin && (
-                        <Link
-                            to="/admin"
-                            className="p-2 hover:bg-surface-hover rounded-lg transition-colors"
-                            title="Админ-панель"
-                        >
-                            <Shield className="w-5 h-5 text-primary" />
-                        </Link>
-                    )}
+                    <div className="flex items-center gap-2">
+                        {devMode && (
+                            <div className="px-2 py-1 bg-yellow-500/20 border border-yellow-500/30 rounded text-[10px] font-bold text-yellow-400 uppercase tracking-wider">
+                                DEV
+                            </div>
+                        )}
+                        {isAdmin && (
+                            <Link
+                                to="/admin"
+                                className="p-2 hover:bg-surface-hover rounded-lg transition-colors"
+                                title="Админ-панель"
+                            >
+                                <Shield className="w-5 h-5 text-primary" />
+                            </Link>
+                        )}
+                    </div>
                 </div>
             </header>
 
@@ -69,14 +78,15 @@ export function Layout({ children }) {
             {user && updateAvailable && (
                 <div className="fixed left-0 right-0 bottom-20 z-50 px-4">
                     <div className="max-w-md mx-auto">
-                        <Card className="bg-surface border-white/10 p-4 flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                                <div className="text-sm font-bold text-white">Доступно обновление</div>
-                                <div className="text-xs text-text-secondary truncate">
+                        <Card className="relative overflow-hidden bg-purple-500/10 border border-purple-500/30 backdrop-blur-md p-4 flex items-center justify-between gap-3 rounded-2xl">
+                            <div className="absolute -bottom-6 -left-6 w-28 h-28 rounded-full bg-purple-500/15"></div>
+                            <div className="min-w-0 relative z-10">
+                                <div className="text-sm font-bold text-purple-400">Доступно обновление</div>
+                                <div className="text-xs text-white/60 truncate">
                                     {infoText || 'Нажмите «Обновить», чтобы применить новую версию.'}
                                 </div>
                             </div>
-                            <Button size="sm" className="font-bold" onClick={applyUpdate}>
+                            <Button size="sm" className="font-bold relative z-10" onClick={applyUpdate}>
                                 Обновить
                             </Button>
                         </Card>

@@ -92,20 +92,24 @@ export default function Categories() {
                         <Card
                             key={cat.id || cat.name}
                             onClick={() => handleEditCategory(cat)}
-                            className={`flex items-center justify-between p-4 border-white/5 bg-surface hover:bg-surface-hover transition-colors ${!cat.isDefault ? 'cursor-pointer' : ''}`}
+                            className={`relative overflow-hidden flex items-center justify-between p-4 border-white/10 bg-black/40 hover:bg-black/50 backdrop-blur-sm transition-all rounded-2xl group ${!cat.isDefault ? 'cursor-pointer' : ''}`}
                         >
-                            <div className="flex items-center gap-4">
+                            {/* Декоративные элементы */}
+                            <div className="absolute -bottom-4 -left-4 w-20 h-20 rounded-full bg-white/6"></div>
+                            <div className="absolute top-1/3 right-0 w-16 h-16 rounded-full bg-white/4"></div>
+                            
+                            <div className="flex items-center gap-4 relative z-10">
                                 <div
-                                    className="w-10 h-10 rounded-xl shadow-lg"
+                                    className="w-12 h-12 rounded-2xl shadow-lg transition-transform group-hover:scale-105"
                                     style={{ backgroundColor: cat.color }}
                                 />
                                 <div>
                                     <h3 className="font-bold text-white text-base">{cat.name}</h3>
-                                    <p className="text-xs text-text-secondary">{cat.count} подписок</p>
+                                    <p className="text-xs text-white/60">{cat.count} подписок</p>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-3 relative z-10">
                                 <div className="text-right flex flex-col items-end">
                                     {Object.entries(cat.costByCurrency).length > 0 ? (
                                         Object.entries(cat.costByCurrency).map(([sym, cost]) => (
@@ -114,12 +118,12 @@ export default function Categories() {
                                             </div>
                                         ))
                                     ) : (
-                                        <div className="font-bold text-white text-base">0</div>
+                                        <div className="font-bold text-white text-base">₩0</div>
                                     )}
                                 </div>
                                 {!cat.isDefault && (
                                     <button
-                                        className="text-text-secondary hover:text-red-500 transition-colors p-2"
+                                        className="text-white/40 hover:text-red-500 transition-all p-2 hover:scale-110"
                                         onClick={(e) => handleDeleteCategory(e, cat)}
                                     >
                                         <Trash2 className="w-5 h-5" />

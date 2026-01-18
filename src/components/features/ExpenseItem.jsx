@@ -25,11 +25,15 @@ export function ExpenseItem({ icon, iconUrl, title, amount, currencySymbol, spen
     return (
         <Card
             onClick={onClick}
-            className="flex items-center justify-between p-4 mb-3 border-white/5 bg-surface hover:bg-surface-hover transition-colors cursor-pointer"
+            className="relative overflow-hidden flex items-center justify-between p-4 mb-3 border-white/10 bg-black/40 hover:bg-black/50 backdrop-blur-sm transition-all cursor-pointer rounded-2xl group"
         >
-            <div className="flex items-center gap-4 min-w-0">
+            {/* Декоративные элементы */}
+            <div className="absolute -bottom-4 -left-4 w-20 h-20 rounded-full bg-white/6"></div>
+            <div className="absolute top-1/3 right-0 w-16 h-16 rounded-full bg-white/4"></div>
+            
+            <div className="flex items-center gap-4 min-w-0 relative z-10">
                 <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold ${textColorClass} shadow-lg overflow-hidden flex-shrink-0`}
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold ${textColorClass} shadow-lg overflow-hidden flex-shrink-0 transition-transform group-hover:scale-105`}
                     style={{ backgroundColor: bgColor }}
                 >
                     {iconUrl && failedIconUrl !== iconUrl ? (
@@ -45,18 +49,18 @@ export function ExpenseItem({ icon, iconUrl, title, amount, currencySymbol, spen
                 </div>
                 <div className="min-w-0">
                     <h3 className="font-bold text-white text-base truncate">{title}</h3>
-                    <p className="text-xs text-text-secondary truncate">
+                    <p className="text-xs text-white/60 truncate">
                         {displayDate}{category ? ` • ${category}` : ''}{note ? ` • ${note}` : ''}
                     </p>
                 </div>
             </div>
 
-            <div className="flex items-center gap-4 flex-shrink-0">
+            <div className="flex items-center gap-3 flex-shrink-0 relative z-10">
                 <div className="text-right">
                     <div className="font-bold text-white text-base">{displayCurrency}{Number(amount || 0).toLocaleString()}</div>
                 </div>
                 <button
-                    className="text-text-secondary hover:text-red-500 transition-colors p-2"
+                    className="text-white/40 hover:text-red-500 transition-all p-2 hover:scale-110"
                     onClick={(e) => {
                         e.stopPropagation();
                         onDelete();

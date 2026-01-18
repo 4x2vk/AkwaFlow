@@ -39,8 +39,11 @@ export function CategoryModal({ isOpen, onClose, initialData = null }) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
-            <Card className="w-full max-w-sm bg-surface ring-1 ring-white/10">
-                <div className="flex items-center justify-between p-4 border-b border-white/5">
+            <Card className="relative w-full max-w-sm bg-black/60 border border-white/10 backdrop-blur-md overflow-hidden rounded-3xl">
+                {/* Декоративные круглые элементы */}
+                <div className="absolute -bottom-10 -left-10 w-40 h-40 rounded-full bg-purple-500/12"></div>
+                <div className="absolute top-1/4 right-0 w-28 h-28 rounded-full bg-white/6"></div>
+                <div className="flex items-center justify-between p-4 border-b border-white/5 relative z-10">
                     <h2 className="text-lg font-bold text-white">
                         {initialData ? 'Редактировать категорию' : 'Новая категория'}
                     </h2>
@@ -49,7 +52,7 @@ export function CategoryModal({ isOpen, onClose, initialData = null }) {
                     </Button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="p-4 space-y-4">
+                <form onSubmit={handleSubmit} className="p-4 space-y-4 relative z-10">
                     <div className="space-y-2">
                         <label className="text-sm font-medium text-text-secondary">Название</label>
                         <Input
