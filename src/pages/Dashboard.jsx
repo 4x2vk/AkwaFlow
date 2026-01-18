@@ -97,38 +97,50 @@ export default function Dashboard() {
             <div className="space-y-6">
                 {/* Summary Cards */}
                 <div className="grid grid-cols-3 gap-3">
-                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem] relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <CreditCard size={40} />
+                    {/* Подписки/МЕС - фиолетовая карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/15"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-purple-500/10"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <CreditCard size={28} className="text-purple-400" />
                         </div>
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">В месяц</span>
-                        <div className="flex flex-col gap-1">
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">подписки/мес</span>
+                        <div className="flex flex-col gap-1 relative z-10 mt-1">
                             {Object.entries(totalsByCurrency).length > 0 ? (
                                 Object.entries(totalsByCurrency).map(([curr, amount]) => (
-                                    <div key={curr} className="font-bold text-sm text-white whitespace-nowrap">
+                                    <div key={curr} className="font-bold text-lg text-purple-400 whitespace-nowrap">
                                         {curr}{amount.toLocaleString()}
                                     </div>
                                 ))
                             ) : (
-                                <div className="font-bold text-lg text-white">0</div>
+                                <div className="font-bold text-xl text-purple-400">₩0</div>
                             )}
                         </div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem] relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <TrendingUp size={40} />
+                    {/* Подписок - темная карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-black/50 border border-white/10 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/8"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-white/5"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <TrendingUp size={28} className="text-white" />
                         </div>
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Подписок</span>
-                        <div className="font-bold text-lg text-white">{subscriptions.length}</div>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">подписок</span>
+                        <div className="font-bold text-xl text-white relative z-10 mt-1">{subscriptions.length}</div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem] relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
-                            <Calendar size={40} />
+                    {/* До оплаты - оранжевая карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-orange-500/10 border border-orange-500/30 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-orange-500/15"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-orange-500/10"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <Calendar size={28} className="text-orange-400" />
                         </div>
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">До оплаты</span>
-                        <div className="font-bold text-lg text-primary">{daysUntil}</div>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">до оплаты</span>
+                        <div className="font-bold text-xl text-orange-400 relative z-10 mt-1">{daysUntil}</div>
                     </Card>
                 </div>
 

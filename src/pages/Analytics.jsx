@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { CreditCard, Wallet, TrendingUp } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
 import { useSubscriptions } from '../context/SubscriptionContext';
@@ -209,95 +210,139 @@ export default function Analytics() {
     return (
         <Layout>
             <div className="space-y-6">
+                {/* Monthly Cards */}
                 <div className="grid grid-cols-3 gap-3">
-                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Стабильные / мес</span>
-                        <div className="flex flex-col gap-1">
+                    {/* Подписки/МЕС - фиолетовая карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/15"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-purple-500/10"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <CreditCard size={28} className="text-purple-400" />
+                        </div>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">подписки/мес</span>
+                        <div className="flex flex-col gap-1 relative z-10 mt-1">
                             {Object.entries(subscriptionMonthlyByCurrency).length > 0 ? (
                                 Object.entries(subscriptionMonthlyByCurrency).map(([curr, amount]) => (
-                                    <div key={curr} className="font-bold text-sm text-white whitespace-nowrap">
+                                    <div key={curr} className="font-bold text-lg text-purple-400 whitespace-nowrap">
                                         {curr}{Number(amount || 0).toLocaleString()}
                                     </div>
                                 ))
                             ) : (
-                                <div className="font-bold text-lg text-white">0</div>
+                                <div className="font-bold text-xl text-purple-400">₩0</div>
                             )}
                         </div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Расходы / месяц</span>
-                        <div className="flex flex-col gap-1">
+                    {/* Расходы/МЕС - оранжевая карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-orange-500/10 border border-orange-500/30 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-orange-500/15"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-orange-500/10"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <Wallet size={28} className="text-orange-400" />
+                        </div>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">расходы/мес</span>
+                        <div className="flex flex-col gap-1 relative z-10 mt-1">
                             {Object.entries(expenseThisMonthByCurrency).length > 0 ? (
                                 Object.entries(expenseThisMonthByCurrency).map(([curr, amount]) => (
-                                    <div key={curr} className="font-bold text-sm text-primary whitespace-nowrap">
+                                    <div key={curr} className="font-bold text-lg text-orange-400 whitespace-nowrap">
                                         {curr}{Number(amount || 0).toLocaleString()}
                                     </div>
                                 ))
                             ) : (
-                                <div className="font-bold text-lg text-primary">0</div>
+                                <div className="font-bold text-xl text-orange-400">₩0</div>
                             )}
                         </div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Итого / месяц</span>
-                        <div className="flex flex-col gap-1">
+                    {/* Итого/МЕС - фиолетовая карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/15"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-purple-500/10"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <TrendingUp size={28} className="text-purple-400" />
+                        </div>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">итого/мес</span>
+                        <div className="flex flex-col gap-1 relative z-10 mt-1">
                             {Object.entries(totalThisMonthByCurrency).length > 0 ? (
                                 Object.entries(totalThisMonthByCurrency).map(([curr, amount]) => (
-                                    <div key={curr} className="font-bold text-sm text-white whitespace-nowrap">
+                                    <div key={curr} className="font-bold text-lg text-purple-400 whitespace-nowrap">
                                         {curr}{Number(amount || 0).toLocaleString()}
                                     </div>
                                 ))
                             ) : (
-                                <div className="font-bold text-lg text-white">0</div>
+                                <div className="font-bold text-xl text-purple-400">₩0</div>
                             )}
                         </div>
                     </Card>
                 </div>
 
+                {/* Yearly Cards */}
                 <div className="grid grid-cols-3 gap-3">
-                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Стабильные / год</span>
-                        <div className="flex flex-col gap-1">
+                    {/* Подписки/ГОД - темная карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-black/50 border border-white/10 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/8"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-white/5"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <CreditCard size={28} className="text-white" />
+                        </div>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">подписки/год</span>
+                        <div className="flex flex-col gap-1 relative z-10 mt-1">
                             {Object.entries(subscriptionYearlyByCurrency).length > 0 ? (
                                 Object.entries(subscriptionYearlyByCurrency).map(([curr, amount]) => (
-                                    <div key={curr} className="font-bold text-sm text-white whitespace-nowrap">
+                                    <div key={curr} className="font-bold text-lg text-white whitespace-nowrap">
                                         {curr}{Number(amount || 0).toLocaleString()}
                                     </div>
                                 ))
                             ) : (
-                                <div className="font-bold text-lg text-white">0</div>
+                                <div className="font-bold text-xl text-white">₩0</div>
                             )}
                         </div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Расходы / год</span>
-                        <div className="flex flex-col gap-1">
+                    {/* Расходы/ГОД - темная карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-black/50 border border-white/10 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/8"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-white/5"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <Wallet size={28} className="text-white" />
+                        </div>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">расходы/год</span>
+                        <div className="flex flex-col gap-1 relative z-10 mt-1">
                             {Object.entries(expenseThisYearByCurrency).length > 0 ? (
                                 Object.entries(expenseThisYearByCurrency).map(([curr, amount]) => (
-                                    <div key={curr} className="font-bold text-sm text-primary whitespace-nowrap">
+                                    <div key={curr} className="font-bold text-lg text-white whitespace-nowrap">
                                         {curr}{Number(amount || 0).toLocaleString()}
                                     </div>
                                 ))
                             ) : (
-                                <div className="font-bold text-lg text-primary">0</div>
+                                <div className="font-bold text-xl text-white">₩0</div>
                             )}
                         </div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-3 flex flex-col justify-between h-auto min-h-[6rem]">
-                        <span className="text-[10px] text-text-secondary uppercase tracking-wider">Итого / год</span>
-                        <div className="flex flex-col gap-1">
+                    {/* Итого/ГОД - фиолетовая карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/15"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-purple-500/10"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <TrendingUp size={28} className="text-purple-400" />
+                        </div>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">итого/год</span>
+                        <div className="flex flex-col gap-1 relative z-10 mt-1">
                             {Object.entries(totalThisYearByCurrency).length > 0 ? (
                                 Object.entries(totalThisYearByCurrency).map(([curr, amount]) => (
-                                    <div key={curr} className="font-bold text-sm text-white whitespace-nowrap">
+                                    <div key={curr} className="font-bold text-lg text-purple-400 whitespace-nowrap">
                                         {curr}{Number(amount || 0).toLocaleString()}
                                     </div>
                                 ))
                             ) : (
-                                <div className="font-bold text-lg text-white">0</div>
+                                <div className="font-bold text-xl text-purple-400">₩0</div>
                             )}
                         </div>
                     </Card>

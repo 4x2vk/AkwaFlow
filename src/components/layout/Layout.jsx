@@ -78,14 +78,15 @@ export function Layout({ children }) {
             {user && updateAvailable && (
                 <div className="fixed left-0 right-0 bottom-20 z-50 px-4">
                     <div className="max-w-md mx-auto">
-                        <Card className="bg-surface border-white/10 p-4 flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                                <div className="text-sm font-bold text-white">Доступно обновление</div>
-                                <div className="text-xs text-text-secondary truncate">
+                        <Card className="relative overflow-hidden bg-purple-500/10 border border-purple-500/30 backdrop-blur-md p-4 flex items-center justify-between gap-3 rounded-2xl">
+                            <div className="absolute -bottom-6 -left-6 w-28 h-28 rounded-full bg-purple-500/15"></div>
+                            <div className="min-w-0 relative z-10">
+                                <div className="text-sm font-bold text-purple-400">Доступно обновление</div>
+                                <div className="text-xs text-white/60 truncate">
                                     {infoText || 'Нажмите «Обновить», чтобы применить новую версию.'}
                                 </div>
                             </div>
-                            <Button size="sm" className="font-bold" onClick={applyUpdate}>
+                            <Button size="sm" className="font-bold relative z-10" onClick={applyUpdate}>
                                 Обновить
                             </Button>
                         </Card>
