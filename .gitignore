@@ -27,6 +27,7 @@ dist-ssr
 bot/service-account.json
 *.service-account.json
 service-account*.json
+/.firebase/hosting.ZGlzdA.cache
 
 # Environment variables
 .env
