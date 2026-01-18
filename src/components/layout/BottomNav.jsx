@@ -1,12 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { CreditCard, Folder, BarChart2, Receipt } from 'lucide-react';
+import { CreditCard, Folder, BarChart2, Wallet } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export function BottomNav() {
     const navItems = [
         { to: '/', icon: CreditCard, label: 'Подписки' },
-        { to: '/expenses', icon: Receipt, label: 'Расходы' },
+        { to: '/expenses', icon: Wallet, label: 'Расходы' },
         { to: '/categories', icon: Folder, label: 'Категории' },
         { to: '/analytics', icon: BarChart2, label: 'Аналитика' },
     ];

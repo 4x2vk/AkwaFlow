@@ -35,11 +35,15 @@ export function SubscriptionItem({ icon, iconUrl, name, cycle, cost, color, curr
     return (
         <Card
             onClick={onClick}
-            className="flex items-center justify-between p-4 mb-3 border-white/5 bg-surface hover:bg-surface-hover transition-colors cursor-pointer"
+            className="relative overflow-hidden flex items-center justify-between p-4 mb-3 border-white/10 bg-black/40 hover:bg-black/50 backdrop-blur-sm transition-all cursor-pointer rounded-2xl group"
         >
-            <div className="flex items-center gap-4">
+            {/* Декоративные элементы */}
+            <div className="absolute -bottom-4 -left-4 w-20 h-20 rounded-full bg-white/6"></div>
+            <div className="absolute top-1/3 right-0 w-16 h-16 rounded-full bg-white/4"></div>
+            
+            <div className="flex items-center gap-4 relative z-10">
                 <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold ${textColorClass} shadow-lg overflow-hidden`}
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold ${textColorClass} shadow-lg overflow-hidden transition-transform group-hover:scale-105`}
                     style={{ backgroundColor: bgColor }}
                 >
                     {iconUrl && failedIconUrl !== iconUrl ? (
@@ -55,17 +59,17 @@ export function SubscriptionItem({ icon, iconUrl, name, cycle, cost, color, curr
                 </div>
                 <div>
                     <h3 className="font-bold text-white text-base">{name}</h3>
-                    <p className="text-xs text-text-secondary">{cycle}</p>
+                    <p className="text-xs text-white/60">{cycle}</p>
                 </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 relative z-10">
                 <div className="text-right">
                     <div className="font-bold text-white text-base">{displayCurrency}{cost.toLocaleString()}</div>
-                    <div className="text-xs text-text-secondary">{periodLabel}</div>
+                    <div className="text-xs text-white/50">{periodLabel}</div>
                 </div>
                 <button
-                    className="text-text-secondary hover:text-red-500 transition-colors p-2"
+                    className="text-white/40 hover:text-red-500 transition-all p-2 hover:scale-110"
                     onClick={(e) => {
                         e.stopPropagation();
                         onDelete();

@@ -93,63 +93,69 @@ export default function AdminDashboard() {
                 <div className="space-y-6">
                 {/* Stats Cards */}
                 <div className="grid grid-cols-2 gap-4">
-                    <Card className="bg-surface border-white/5 p-4">
-                        <div className="flex items-center justify-between">
+                    <Card className="relative overflow-hidden bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm p-4 rounded-2xl">
+                        <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-purple-500/12"></div>
+                        <div className="flex items-center justify-between relative z-10">
                             <div>
-                                <p className="text-xs text-text-secondary mb-1">Всего пользователей</p>
-                                <p className="text-2xl font-bold text-white">{adminStats?.totalUsers || 0}</p>
+                                <p className="text-xs text-white/70 mb-1 font-semibold">Всего пользователей</p>
+                                <p className="text-2xl font-bold text-purple-400">{adminStats?.totalUsers || 0}</p>
                             </div>
-                            <Users className="w-8 h-8 text-primary" />
+                            <Users className="w-8 h-8 text-purple-400 opacity-80" />
                         </div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-4">
-                        <div className="flex items-center justify-between">
+                    <Card className="relative overflow-hidden bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm p-4 rounded-2xl">
+                        <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-purple-500/12"></div>
+                        <div className="flex items-center justify-between relative z-10">
                             <div>
-                                <p className="text-xs text-text-secondary mb-1">Активные (7 дней)</p>
-                                <p className="text-2xl font-bold text-primary">{adminStats?.activeUsers || 0}</p>
+                                <p className="text-xs text-white/70 mb-1 font-semibold">Активные (7 дней)</p>
+                                <p className="text-2xl font-bold text-purple-400">{adminStats?.activeUsers || 0}</p>
                             </div>
-                            <UserCheck className="w-8 h-8 text-primary" />
+                            <UserCheck className="w-8 h-8 text-purple-400 opacity-80" />
                         </div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-4">
-                        <div className="flex items-center justify-between">
+                    <Card className="relative overflow-hidden bg-black/50 border border-white/10 backdrop-blur-sm p-4 rounded-2xl">
+                        <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/8"></div>
+                        <div className="flex items-center justify-between relative z-10">
                             <div>
-                                <p className="text-xs text-text-secondary mb-1">Неактивные</p>
-                                <p className="text-2xl font-bold text-text-secondary">{adminStats?.inactiveUsers || 0}</p>
+                                <p className="text-xs text-white/70 mb-1 font-semibold">Неактивные</p>
+                                <p className="text-2xl font-bold text-white/70">{adminStats?.inactiveUsers || 0}</p>
                             </div>
-                            <UserX className="w-8 h-8 text-text-secondary" />
+                            <UserX className="w-8 h-8 text-white/50" />
                         </div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-4">
-                        <div className="flex items-center justify-between">
+                    <Card className="relative overflow-hidden bg-orange-500/10 border border-orange-500/30 backdrop-blur-sm p-4 rounded-2xl">
+                        <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-orange-500/12"></div>
+                        <div className="flex items-center justify-between relative z-10">
                             <div>
-                                <p className="text-xs text-text-secondary mb-1">Новые (7 дней)</p>
-                                <p className="text-2xl font-bold text-primary">{adminStats?.newUsersLast7Days || 0}</p>
+                                <p className="text-xs text-white/70 mb-1 font-semibold">Новые (7 дней)</p>
+                                <p className="text-2xl font-bold text-orange-400">{adminStats?.newUsersLast7Days || 0}</p>
                             </div>
-                            <TrendingUp className="w-8 h-8 text-primary" />
+                            <TrendingUp className="w-8 h-8 text-orange-400 opacity-80" />
                         </div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-4">
-                        <div className="flex items-center justify-between">
+                    <Card className="relative overflow-hidden bg-black/50 border border-white/10 backdrop-blur-sm p-4 rounded-2xl">
+                        <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/8"></div>
+                        <div className="flex items-center justify-between relative z-10">
                             <div>
-                                <p className="text-xs text-text-secondary mb-1">Всего подписок</p>
+                                <p className="text-xs text-white/70 mb-1 font-semibold">Всего подписок</p>
                                 <p className="text-2xl font-bold text-white">{adminStats?.totalSubscriptions || 0}</p>
                             </div>
-                            <CreditCard className="w-8 h-8 text-primary" />
+                            <CreditCard className="w-8 h-8 text-white/80" />
                         </div>
                     </Card>
 
-                    <Card className="bg-surface border-white/5 p-4">
-                        <div className="flex items-center justify-between">
+                    <Card className="relative overflow-hidden bg-black/50 border border-white/10 backdrop-blur-sm p-4 rounded-2xl">
+                        <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/8"></div>
+                        <div className="flex items-center justify-between relative z-10">
                             <div>
-                                <p className="text-xs text-text-secondary mb-1">Среднее на пользователя</p>
+                                <p className="text-xs text-white/70 mb-1 font-semibold">Среднее на пользователя</p>
                                 <p className="text-2xl font-bold text-white">{adminStats?.averageSubscriptionsPerUser || 0}</p>
                             </div>
-                            <Folder className="w-8 h-8 text-primary" />
+                            <Folder className="w-8 h-8 text-white/80" />
                         </div>
                     </Card>
                 </div>
@@ -157,8 +163,9 @@ export default function AdminDashboard() {
                 {/* Charts */}
                 <div className="grid grid-cols-1 gap-4">
                     {/* Active vs Inactive Users Pie Chart */}
-                    <Card className="bg-surface border-white/5 p-4">
-                        <h3 className="text-sm font-bold text-white mb-4">Активные vs Неактивные пользователи</h3>
+                    <Card className="relative overflow-hidden bg-black/50 border border-white/10 backdrop-blur-sm p-4 rounded-2xl">
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/8"></div>
+                        <h3 className="text-sm font-bold text-white mb-4 relative z-10">Активные vs Неактивные пользователи</h3>
                         <div className="h-64 w-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
@@ -207,8 +214,9 @@ export default function AdminDashboard() {
                     </Card>
 
                     {/* Users and Subscriptions Over Time */}
-                    <Card className="bg-surface border-white/5 p-4">
-                        <h3 className="text-sm font-bold text-white mb-4">Новые пользователи и подписки (30 дней)</h3>
+                    <Card className="relative overflow-hidden bg-black/50 border border-white/10 backdrop-blur-sm p-4 rounded-2xl">
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/8"></div>
+                        <h3 className="text-sm font-bold text-white mb-4 relative z-10">Новые пользователи и подписки (30 дней)</h3>
                         <div className="h-64 w-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart 
@@ -311,13 +319,14 @@ export default function AdminDashboard() {
                 </div>
 
                 {/* Users List */}
-                <Card className="bg-surface border-white/5 p-4">
-                    <h3 className="text-sm font-bold text-white mb-4">Список пользователей</h3>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                <Card className="relative overflow-hidden bg-black/50 border border-white/10 backdrop-blur-sm p-4 rounded-2xl">
+                    <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/8"></div>
+                    <h3 className="text-sm font-bold text-white mb-4 relative z-10">Список пользователей</h3>
+                    <div className="space-y-2 max-h-96 overflow-y-auto relative z-10">
                         {adminStats?.users?.map((user) => (
                             <div
                                 key={user.id}
-                                className="flex items-center justify-between p-3 bg-surface-hover rounded-lg border border-white/5"
+                                className="flex items-center justify-between p-3 bg-black/40 rounded-xl border border-white/10"
                             >
                                 <div className="flex items-center gap-3">
                                     <div className={`w-3 h-3 rounded-full ${user.isActive ? 'bg-primary' : 'bg-gray-500'}`} />
