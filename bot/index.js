@@ -176,6 +176,10 @@ const detectIntent = (rawText) => {
 
     if (has(/^\/start\b/)) return 'start';
     if (has(/\b(помощь|help|хелп|что ты умеешь|как пользоваться)\b/)) return 'help';
+    if (has(/^\/(expense|расходы?|spend)\b/)) return 'expense_add';
+    if (has(/\b(мои расходы|список расходов|покажи расходы|показать расходы)\b/)) return 'expense_list';
+    if (has(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/) && has(/\b(расход|расходы|трата|траты)\b/)) return 'expense_remove';
+    if (has(/\b(расход|трата|траты|потратил|потратила|купил|купила|spend|spent|expense)\b/)) return 'expense_add';
     if (has(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/)) return 'remove';
     if (has(/\b(добав(ь|ить|ляй|им)|создай|запиши|оформи|подключи|add)\b/)) return 'add';
     if (has(/\b(мои подписки|список подписок|покажи подписки|показать подписки|список|list|subscriptions)\b/)) return 'list';
@@ -193,7 +197,9 @@ const buildHelpMessage = () => {
         '',
         'Что я умею:',
         '• добавлять подписки (текстом или голосом)',
+        '• добавлять разовые расходы',
         '• показывать список ваших подписок',
+        '• показывать список ваших расходов',
         '• удалять подписки по названию',
         '• понимать разные валюты (₩ / ₽ / $ / ₸ и слова вроде “вон”, “руб”, “тенге”)',
         '',
@@ -201,6 +207,9 @@ const buildHelpMessage = () => {
         '• «Добавь Netflix 10000 вон 12 числа»',
         '• «Добавь Spotify 5$ завтра»',
         '• «Добавь YouTube 1000 тг 17 февраля»',
+        '• «Расход 12000 вон кафе сегодня»',
+        '• «Потратил 5000₩ такси вчера»',
+        '• «Мои расходы»',
         '• «Удали Netflix»',
         '• «Мои подписки»',
         '',
@@ -218,8 +227,10 @@ const buildWelcomeMessage = () => {
         '',
         'Отправьте мне сообщение (можно голосом):',
         '• «Добавь Netflix 10000 вон 12 числа»',
+        '• «Расход 12000 вон кафе сегодня»',
         '• «Удали Spotify»',
         '• «Мои подписки»',
+        '• «Мои расходы»',
         '',
         'Справка: /help',
         'Приватность: /privacy',
@@ -628,6 +639,33 @@ const processTextCommand = async (chatId, text) => {
                 return;
             }
         }
+
+        if (pending.type === 'expense_remove') {
+            const options = pending.data?.options || [];
+            const answer = normalized.trim();
+            const idx = parseInt(answer, 10);
+            let chosen = null;
+            if (!isNaN(idx) && idx >= 1 && idx <= options.length) {
+                chosen = options[idx - 1];
+            } else {
+                chosen = options.find(o => String(o.name || '').toLowerCase() === answer.toLowerCase()) || null;
+            }
+            if (!chosen) {
+                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер (например 1) или точное название из списка.');
+                return;
+            }
+            try {
+                await chosen.ref.delete();
+                clearPending(chatId);
+                bot.sendMessage(chatId, `✅ Готово! Расход "${chosen.name}" удалён. 😊`);
+                return;
+            } catch (e) {
+                console.error('[BOT] Pending expense remove error:', e);
+                clearPending(chatId);
+                bot.sendMessage(chatId, '😔 Не получилось удалить расход. Попробуйте позже.');
+                return;
+            }
+        }
     }
 
     // HELP / START / GREET
@@ -660,6 +698,167 @@ const processTextCommand = async (chatId, text) => {
         } catch (e) {
             console.error('[BOT] List error:', e);
             bot.sendMessage(chatId, '😔 Извините, не удалось получить список подписок. Попробуйте позже. 🙏');
+            return;
+        }
+    }
+
+    // EXPENSE LIST
+    if (intent === 'expense_list') {
+        try {
+            const snapshot = await db.collection('users').doc(String(chatId)).collection('expenses').get();
+            if (snapshot.empty) {
+                bot.sendMessage(chatId, '📭 Похоже, у вас пока нет расходов.\nНапишите: «Расход 12000 вон кафе сегодня» 🙂');
+                return;
+            }
+
+            const items = snapshot.docs.map((d) => ({ id: d.id, ...d.data(), _ref: d.ref }));
+            items.sort((a, b) => {
+                const aTime = a.spentAt ? new Date(a.spentAt).getTime() : (a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0);
+                const bTime = b.spentAt ? new Date(b.spentAt).getTime() : (b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0);
+                return bTime - aTime;
+            });
+
+            let response = '🧾 *Ваши расходы (последние):*\n\n';
+            items.slice(0, 15).forEach((e) => {
+                const sym = e.currencySymbol || '₩';
+                const amount = Number(e.amount || 0);
+                const dateStr = e.spentAt ? new Date(e.spentAt).toLocaleDateString('ru-RU') : '';
+                response += `• *${e.title || 'Расход'}*: ${sym}${amount.toLocaleString()}${dateStr ? ` — ${dateStr}` : ''}\n`;
+            });
+            bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
+            return;
+        } catch (e) {
+            console.error('[BOT] Expense list error:', e);
+            bot.sendMessage(chatId, '😔 Не удалось получить список расходов. Попробуйте позже. 🙏');
+            return;
+        }
+    }
+
+    // EXPENSE ADD
+    if (intent === 'expense_add') {
+        const amount = extractCost(normalized);
+        const { code, symbol } = detectCurrency(normalized);
+
+        const parseExpenseDate = (text) => {
+            const t = normalizeText(text).toLowerCase();
+            const now = new Date();
+            now.setHours(0, 0, 0, 0);
+
+            if (/\bсегодня\b/.test(t)) return new Date(now).toISOString();
+            if (/\bвчера\b/.test(t)) {
+                const d = new Date(now);
+                d.setDate(d.getDate() - 1);
+                return d.toISOString();
+            }
+            if (/\bзавтра\b/.test(t)) {
+                const d = new Date(now);
+                d.setDate(d.getDate() + 1);
+                return d.toISOString();
+            }
+            if (/\bпослезавтра\b/.test(t)) {
+                const d = new Date(now);
+                d.setDate(d.getDate() + 2);
+                return d.toISOString();
+            }
+
+            const dm = t.match(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/);
+            if (dm) {
+                const day = parseInt(dm[1], 10);
+                const month = parseInt(dm[2], 10) - 1;
+                const yearRaw = dm[3];
+                let year = now.getFullYear();
+                if (yearRaw) {
+                    const y = parseInt(yearRaw, 10);
+                    year = y < 100 ? 2000 + y : y;
+                }
+                const d = new Date(year, month, day);
+                if (!isNaN(d.getTime())) return d.toISOString();
+            }
+
+            const monthMap = {
+                янв: 0, фев: 1, мар: 2, апр: 3, май: 4, июн: 5, июл: 6, авг: 7, сен: 8, окт: 9, ноя: 10, дек: 11
+            };
+            const m = t.match(/\b(\d{1,2})\s+(янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:т[а])?|апр(?:ел[ья])?|ма[йя]|июн(?:[ья])?|июл(?:[ья])?|авг(?:уст[а])?|сен(?:тябр[ья])?|окт(?:ябр[ья])?|ноя(?:бр[ья])?|дек(?:ябр[ья])?)\b/);
+            if (m) {
+                const day = parseInt(m[1], 10);
+                const token = m[2].slice(0, 3);
+                const month = monthMap[token];
+                if (month !== undefined) {
+                    const d = new Date(now.getFullYear(), month, day);
+                    if (!isNaN(d.getTime())) return d.toISOString();
+                }
+            }
+
+            const dayOnly = t.match(/\b(\d{1,2})\s*(числа|число|го|е)\b/);
+            if (dayOnly) {
+                const day = parseInt(dayOnly[1], 10);
+                if (day >= 1 && day <= 31) {
+                    const d = new Date(now.getFullYear(), now.getMonth(), day);
+                    if (!isNaN(d.getTime())) return d.toISOString();
+                }
+            }
+
+            return new Date(now).toISOString();
+        };
+
+        const spentAt = parseExpenseDate(normalized);
+
+        // Extract title by stripping common words, numbers, currency and date parts
+        let titleCandidate = normalized;
+        titleCandidate = titleCandidate.replace(/\b(расход|расходы|трата|траты|потратил|потратила|купил|купила|spend|spent|expense)\b/gi, ' ');
+        titleCandidate = titleCandidate.replace(/\b(на|за|в)\b/gi, ' ');
+        titleCandidate = titleCandidate.replace(/(\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)/g, ' ');
+        titleCandidate = titleCandidate.replace(/[₽₩₸$]/g, ' ');
+        titleCandidate = titleCandidate.replace(/\b(rub|usd|kzt|krw|won|руб(ль|ля|лей)?|доллар(а|ов)?|бакс(ов)?|тенге|тенг|тг|вон(а|ы)?)\b/gi, ' ');
+        titleCandidate = titleCandidate.replace(/\b(сегодня|вчера|завтра|послезавтра|через)\b/gi, ' ');
+        titleCandidate = titleCandidate.replace(/\b(\d{1,2})\s*(числа|число|го|е)\b/gi, ' ');
+        titleCandidate = titleCandidate.replace(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/g, ' ');
+        titleCandidate = titleCandidate.replace(/\b(\d{1,2})\s+(янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:т[а])?|апр(?:ел[ья])?|ма[йя]|июн(?:[ья])?|июл(?:[ья])?|авг(?:уст[а])?|сен(?:тябр[ья])?|окт(?:ябр[ья])?|ноя(?:бр[ья])?|дек(?:ябр[ья])?)\b/gi, ' ');
+        titleCandidate = titleCandidate.replace(/\s+/g, ' ').trim();
+
+        const title = titleCandidate;
+
+        if (!title || title.length < 2) {
+            bot.sendMessage(chatId, 'Как назвать расход? Например: «Расход 12000 вон кафе сегодня». 🙂');
+            return;
+        }
+        if (amount === null) {
+            bot.sendMessage(chatId, `Окей, *${title}*. А какая сумма? Например: «5000₩» или «1000 тг».`, { parse_mode: 'Markdown' });
+            return;
+        }
+
+        try {
+            const userDocRef = db.collection('users').doc(String(chatId));
+            const expenseData = {
+                title,
+                amount,
+                currency: code || 'WON',
+                currencySymbol: symbol || '₩',
+                spentAt,
+                category: 'Общие',
+                color: '#a78bfa',
+                note: '',
+                icon: String(title || '?')[0].toUpperCase(),
+                iconUrl: null,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+
+            if (title.length > 100) {
+                bot.sendMessage(chatId, 'Название слишком длинное 😅 Давайте короче (до 100 символов).');
+                return;
+            }
+            if (isNaN(amount) || amount < 0 || amount > 1000000000) {
+                bot.sendMessage(chatId, 'Сумма некорректная. Можно число от 0 до 1,000,000,000 🙂');
+                return;
+            }
+
+            await userDocRef.collection('expenses').add(expenseData);
+            const dateStr = spentAt ? new Date(spentAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—';
+            bot.sendMessage(chatId, `✅ Готово! Добавил расход "${title}" на сумму ${expenseData.currencySymbol}${Number(amount).toLocaleString()}.\nДата: ${dateStr}. 😊`);
+            return;
+        } catch (e) {
+            console.error('[BOT] Error adding expense:', e);
+            bot.sendMessage(chatId, '😔 Не получилось добавить расход. Попробуйте, пожалуйста, ещё раз чуть позже.');
             return;
         }
     }
@@ -783,6 +982,62 @@ const processTextCommand = async (chatId, text) => {
         } catch (e) {
             console.error('[BOT] Remove error:', e);
             bot.sendMessage(chatId, '😔 Извините, произошла ошибка при удалении подписки. Попробуйте еще раз позже. 🙏');
+            return;
+        }
+    }
+
+    // EXPENSE REMOVE
+    if (intent === 'expense_remove') {
+        const t = normalizeText(normalized);
+        let titleToRemove = t
+            .replace(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/gi, ' ')
+            .replace(/\b(расход|расходы|трата|траты)\b/gi, ' ')
+            .trim();
+
+        if (!titleToRemove) {
+            bot.sendMessage(chatId, 'Какой расход удалить? Например: «Удали расход такси». 🙂');
+            return;
+        }
+
+        try {
+            const col = db.collection('users').doc(String(chatId)).collection('expenses');
+            const snapshot = await col.get();
+            if (snapshot.empty) {
+                bot.sendMessage(chatId, 'У вас пока нет расходов — удалять нечего 🙂');
+                return;
+            }
+
+            const wanted = titleToRemove.toLowerCase();
+            const matches = snapshot.docs
+                .map(d => ({ ref: d.ref, data: d.data(), id: d.id }))
+                .filter(({ data }) => {
+                    const n = String(data.title || '').toLowerCase();
+                    return n === wanted || n.includes(wanted) || wanted.includes(n);
+                });
+
+            if (matches.length === 0) {
+                bot.sendMessage(chatId, `😔 Не нашёл расход "${titleToRemove}".\nМогу показать список: напишите «Мои расходы».`);
+                return;
+            }
+            if (matches.length > 1) {
+                const list = matches.slice(0, 10).map((m, i) => `${i + 1}) ${m.data.title}`).join('\n');
+                setPending(chatId, {
+                    type: 'expense_remove',
+                    step: 'choose_one',
+                    data: {
+                        options: matches.slice(0, 10).map(m => ({ name: m.data.title, ref: m.ref }))
+                    }
+                });
+                bot.sendMessage(chatId, `Нашёл несколько вариантов. Выберите номер:\n\n${list}\n\n(или напишите «отмена»)`);
+                return;
+            }
+
+            await matches[0].ref.delete();
+            bot.sendMessage(chatId, `✅ Готово! Расход "${matches[0].data.title}" удалён. 😊`);
+            return;
+        } catch (e) {
+            console.error('[BOT] Expense remove error:', e);
+            bot.sendMessage(chatId, '😔 Извините, произошла ошибка при удалении расхода. Попробуйте еще раз позже. 🙏');
             return;
         }
     }

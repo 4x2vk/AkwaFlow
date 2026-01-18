@@ -6,6 +6,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
 import { validateAndSanitizeExpense } from '../../lib/validation';
+import { getIcon } from '../../services/iconService';
 
 export function AddExpenseModal({ isOpen, onClose, initialData = null }) {
     const { addExpense, updateExpense } = useExpenses();
@@ -31,7 +32,7 @@ export function AddExpenseModal({ isOpen, onClose, initialData = null }) {
             return {
                 title: initialData.title || '',
                 amount: initialData.amount ?? '',
-                currency: initialData.currency || 'RUB',
+                currency: initialData.currency || 'WON',
                 spentAt: (initialData.spentAt || '').slice(0, 10),
                 category: initialData.category || 'Общие',
                 color: initialData.color || '#a78bfa',
@@ -42,7 +43,7 @@ export function AddExpenseModal({ isOpen, onClose, initialData = null }) {
         return {
             title: '',
             amount: '',
-            currency: 'RUB',
+            currency: 'WON',
             spentAt: today,
             category: 'Общие',
             color: '#a78bfa',
@@ -58,7 +59,16 @@ export function AddExpenseModal({ isOpen, onClose, initialData = null }) {
         e.preventDefault();
 
         const selectedCat = uniqueCategories.find(c => c.name === formData.category);
-        const currencySymbol = currencies.find(c => c.code === formData.currency)?.symbol || '₽';
+        const currencySymbol = currencies.find(c => c.code === formData.currency)?.symbol || '₩';
+
+        // Auto icon (same logic as subscriptions)
+        let iconUrl = null;
+        const iconText = String(formData.title || '?')[0]?.toUpperCase() || '?';
+        try {
+            iconUrl = await getIcon(formData.title, 'subscription');
+        } catch (error) {
+            console.warn('[EXPENSE_MODAL] Failed to fetch icon:', error);
+        }
 
         const rawData = {
             title: formData.title,
@@ -68,7 +78,9 @@ export function AddExpenseModal({ isOpen, onClose, initialData = null }) {
             spentAt: formData.spentAt,
             category: formData.category,
             color: selectedCat?.color || formData.color,
-            note: formData.note
+            note: formData.note,
+            icon: iconText,
+            iconUrl
         };
 
         const validation = validateAndSanitizeExpense(rawData);

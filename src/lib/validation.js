@@ -273,6 +273,24 @@ export function validateExpense(data) {
             errors.push('Некорректный формат цвета (должен быть hex, например #a78bfa)');
         }
     }
+
+    // Validate icon (short text) + iconUrl
+    if (data.icon && typeof data.icon === 'string') {
+        if (data.icon.length > 5) {
+            errors.push('Иконка слишком длинная');
+        }
+        if (/<script|javascript:|onerror=|onload=/i.test(data.icon)) {
+            errors.push('Иконка содержит недопустимые символы');
+        }
+    }
+    if (data.iconUrl && typeof data.iconUrl === 'string') {
+        if (data.iconUrl.length > 500) {
+            errors.push('Ссылка на иконку слишком длинная');
+        }
+        if (/<script|javascript:|onerror=|onload=/i.test(data.iconUrl)) {
+            errors.push('Ссылка на иконку содержит недопустимые символы');
+        }
+    }
     
     return {
         valid: errors.length === 0,
@@ -305,7 +323,9 @@ export function validateAndSanitizeExpense(data) {
         spentAt: data.spentAt,
         category: data.category ? sanitizeString(data.category) : 'Общие',
         color: data.color || '#a78bfa',
-        note: data.note ? sanitizeString(data.note) : ''
+        note: data.note ? sanitizeString(data.note) : '',
+        icon: data.icon || (data.title ? sanitizeString(data.title)[0]?.toUpperCase() : '?'),
+        iconUrl: data.iconUrl || null
     };
     
     return {
