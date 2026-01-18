@@ -485,8 +485,9 @@ export default function Analytics() {
                                     }}
                                     cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                                 />
-                                <Bar dataKey="subscriptions" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-                                <Bar dataKey="expenses" fill="#a78bfa" radius={[4, 4, 0, 0]} />
+                                {/* Stacked: stable (bottom) + expenses (top) */}
+                                <Bar dataKey="subscriptions" stackId="total" fill="#3B82F6" radius={[0, 0, 4, 4]} />
+                                <Bar dataKey="expenses" stackId="total" fill="#a78bfa" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
