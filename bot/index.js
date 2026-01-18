@@ -91,12 +91,70 @@ bot.on('polling_error', (error) => {
 
 // Currency Helper
 const detectCurrency = (input) => {
-    const text = input.toLowerCase().trim();
-    if (text.includes('вон') || text.includes('won')) return { code: 'WON', symbol: '₩' };
-    if (text.includes('руб') || text.includes('rub')) return { code: 'RUB', symbol: '₽' };
-    if (text.includes('дол') || text.includes('usd') || text.includes('$')) return { code: 'USD', symbol: '$' };
-    if (text.includes('тен') || text.includes('kzt')) return { code: 'KZT', symbol: '₸' };
-    return { code: 'WON', symbol: '₩' }; // Default
+    const text = String(input || '').toLowerCase().trim();
+
+    // helper: match token as standalone word-ish (prevents false positives)
+    const hasToken = (token) => new RegExp(`(^|[\\s,.;:()\\-])${token}([\\s,.;:()\\-]|$)`, 'i').test(text);
+
+    // 1) KZT / Tenge
+    // examples: "1000 тг", "1000 тенге", "1000 тенг", "1000 kzt", "1000 ₸"
+    if (
+        text.includes('₸') ||
+        hasToken('kzt') ||
+        hasToken('тенге') ||
+        hasToken('тенг') ||
+        hasToken('тен') ||
+        hasToken('тг') ||
+        text.includes('казахстан') // "казахстанский тенге"
+    ) {
+        return { code: 'KZT', symbol: '₸' };
+    }
+
+    // 2) RUB / Ruble
+    // examples: "1000 руб", "1000 рублей", "1000 р", "1000 rub", "1000 ₽"
+    if (
+        text.includes('₽') ||
+        hasToken('rub') ||
+        hasToken('руб') ||
+        hasToken('руб.') ||
+        hasToken('рублей') ||
+        hasToken('рубля') ||
+        hasToken('рубль') ||
+        hasToken('р') // common shorthand (works best when separated by spaces/punct)
+    ) {
+        return { code: 'RUB', symbol: '₽' };
+    }
+
+    // 3) USD / Dollar
+    // examples: "10$", "10 usd", "10 доллар", "10 бакс"
+    if (
+        text.includes('$') ||
+        hasToken('usd') ||
+        hasToken('дол') ||
+        hasToken('доллар') ||
+        hasToken('доллара') ||
+        hasToken('долларов') ||
+        hasToken('бакс') ||
+        hasToken('баксов')
+    ) {
+        return { code: 'USD', symbol: '$' };
+    }
+
+    // 4) WON / KRW
+    // examples: "1000 вон", "1000 won", "1000 krw", "1000 ₩"
+    if (
+        text.includes('₩') ||
+        hasToken('krw') ||
+        hasToken('won') ||
+        hasToken('вон') ||
+        hasToken('воны') ||
+        hasToken('вона')
+    ) {
+        return { code: 'WON', symbol: '₩' };
+    }
+
+    // Default
+    return { code: 'WON', symbol: '₩' };
 };
 
 // Date Helper - Parse date from text like "12 числа" or "12"
