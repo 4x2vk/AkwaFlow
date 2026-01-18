@@ -22,6 +22,13 @@ service cloud.firestore {
         // Allow write - client-side verification ensures users only modify their own data
         allow write: if true;
       }
+
+      match /expenses/{expenseId} {
+        // Allow read access to all expenses (needed for analytics/admin potential)
+        allow read: if true;
+        // Allow write - client-side verification ensures users only modify their own data
+        allow write: if true;
+      }
       
       match /categories/{categoryId} {
         // Allow read access to all categories (needed for admin dashboard)

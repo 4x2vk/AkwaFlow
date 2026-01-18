@@ -3,9 +3,11 @@ import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
 import { useSubscriptions } from '../context/SubscriptionContext';
+import { useExpenses } from '../context/ExpenseContext';
 
 export default function Analytics() {
     const { subscriptions } = useSubscriptions();
+    const { expenses } = useExpenses();
 
     // Group costs by currency for totals
     const totalsByCurrency = subscriptions.reduce((acc, sub) => {
@@ -59,27 +61,29 @@ export default function Analytics() {
 
     const pieData = Object.values(categoryData).filter(d => d.value > 0);
 
-    // Calculate monthly expenses based on payment dates and billing periods
-    const calculateMonthlyExpenses = () => {
+    const getMonthLabels = () => ([
+        { name: 'Янв', month: 0 },
+        { name: 'Фев', month: 1 },
+        { name: 'Мар', month: 2 },
+        { name: 'Апр', month: 3 },
+        { name: 'Май', month: 4 },
+        { name: 'Июн', month: 5 },
+        { name: 'Июл', month: 6 },
+        { name: 'Авг', month: 7 },
+        { name: 'Сен', month: 8 },
+        { name: 'Окт', month: 9 },
+        { name: 'Ноя', month: 10 },
+        { name: 'Дек', month: 11 },
+    ]);
+
+    // Calculate monthly subscription expenses (projection) based on payment dates and billing periods
+    const calculateMonthlySubscriptionExpenses = () => {
         const now = new Date();
         now.setHours(0, 0, 0, 0);
         const currentYear = now.getFullYear();
         const currentMonth = now.getMonth();
         
-        const months = [
-            { name: 'Янв', month: 0, cost: 0 },
-            { name: 'Фев', month: 1, cost: 0 },
-            { name: 'Мар', month: 2, cost: 0 },
-            { name: 'Апр', month: 3, cost: 0 },
-            { name: 'Май', month: 4, cost: 0 },
-            { name: 'Июн', month: 5, cost: 0 },
-            { name: 'Июл', month: 6, cost: 0 },
-            { name: 'Авг', month: 7, cost: 0 },
-            { name: 'Сен', month: 8, cost: 0 },
-            { name: 'Окт', month: 9, cost: 0 },
-            { name: 'Ноя', month: 10, cost: 0 },
-            { name: 'Дек', month: 11, cost: 0 },
-        ];
+        const months = getMonthLabels().map((m) => ({ ...m, subscriptions: 0 }));
 
         subscriptions.forEach(sub => {
             if (!sub.nextPaymentDate) return;
@@ -104,7 +108,7 @@ export default function Analytics() {
                 // Only add to months that have already passed or are current month
                 // Payment must be in current year and month must be <= currentMonth
                 if (paymentYear === currentYear && paymentMonth <= currentMonth) {
-                    months[paymentMonth].cost += cost;
+                    months[paymentMonth].subscriptions += cost;
                 }
             } else {
                 // For monthly subscriptions - calculate based on payment day
@@ -135,7 +139,7 @@ export default function Analytics() {
                 // Add cost for each month from first payment to current month
                 while (paymentIterator.getFullYear() === currentYear && paymentIterator.getMonth() <= currentMonth) {
                     const monthIndex = paymentIterator.getMonth();
-                    months[monthIndex].cost += cost;
+                    months[monthIndex].subscriptions += cost;
                     // Move to next month
                     paymentIterator = new Date(paymentIterator.getFullYear(), paymentIterator.getMonth() + 1, paymentDay);
                 }
@@ -145,10 +149,43 @@ export default function Analytics() {
         return months;
     };
 
-    const monthlyData = calculateMonthlyExpenses();
+    // Calculate monthly one-time expenses (actuals) from expenses list
+    const calculateMonthlyOneTimeExpenses = () => {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        const currentYear = now.getFullYear();
+
+        const months = getMonthLabels().map((m) => ({ ...m, expenses: 0 }));
+
+        expenses.forEach((e) => {
+            if (!e?.spentAt) return;
+            const d = new Date(e.spentAt);
+            if (isNaN(d.getTime())) return;
+            if (d.getFullYear() !== currentYear) return;
+            const monthIndex = d.getMonth();
+            months[monthIndex].expenses += (e.amount || 0);
+        });
+
+        return months;
+    };
+
+    const subscriptionMonths = calculateMonthlySubscriptionExpenses();
+    const expenseMonths = calculateMonthlyOneTimeExpenses();
+
+    const monthlyCompareData = getMonthLabels().map((m) => {
+        const subs = subscriptionMonths.find((x) => x.month === m.month)?.subscriptions || 0;
+        const exp = expenseMonths.find((x) => x.month === m.month)?.expenses || 0;
+        return {
+            name: m.name,
+            month: m.month,
+            subscriptions: subs,
+            expenses: exp,
+            total: subs + exp
+        };
+    });
 
     const RADIAN = Math.PI / 180;
-    const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }) => {
+    const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {
         const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
         const x = cx + radius * Math.cos(-midAngle * RADIAN);
         const y = cy + radius * Math.sin(-midAngle * RADIAN);
@@ -284,7 +321,7 @@ export default function Analytics() {
                     <h3 className="text-sm font-bold text-white mb-4">Расходы по месяцам</h3>
                     <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: 1, bottom: 1 }}>
+                            <BarChart data={monthlyCompareData} margin={{ top: 5, right: 5, left: 1, bottom: 1 }}>
                                 <CartesianGrid 
                                     strokeDasharray="3 3" 
                                     stroke="rgba(255,255,255,0.1)" 
@@ -336,12 +373,18 @@ export default function Analytics() {
                                         fontSize: '12px',
                                         padding: '2px 0'
                                     }}
-                                    formatter={(value) => {
-                                        return [`${primaryCurrency}${value.toLocaleString()}`, 'Расходы'];
+                                    formatter={(value, name) => {
+                                        const labelMap = {
+                                            subscriptions: 'Подписки',
+                                            expenses: 'Расходы',
+                                            total: 'Итого'
+                                        };
+                                        return [`${primaryCurrency}${Number(value || 0).toLocaleString()}`, labelMap[name] || name];
                                     }}
                                     cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                                 />
-                                <Bar dataKey="cost" fill="#a78bfa" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="subscriptions" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="expenses" fill="#a78bfa" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>

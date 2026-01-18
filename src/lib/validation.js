@@ -182,3 +182,135 @@ export function validateAndSanitizeSubscription(data) {
         data: sanitized
     };
 }
+
+/**
+ * Validates expense data (one-time spend)
+ * @param {Object} data - Expense data to validate
+ * @returns {{valid: boolean, errors: string[]}}
+ */
+export function validateExpense(data) {
+    const errors = [];
+    
+    // Validate title / name
+    if (!data.title || typeof data.title !== 'string') {
+        errors.push('Название расхода обязательно');
+    } else {
+        const title = data.title.trim();
+        if (title.length === 0) {
+            errors.push('Название расхода не может быть пустым');
+        } else if (title.length > 100) {
+            errors.push('Название расхода слишком длинное (максимум 100 символов)');
+        } else if (title.length < 2) {
+            errors.push('Название расхода слишком короткое (минимум 2 символа)');
+        }
+        if (/<script|javascript:|onerror=|onload=/i.test(title)) {
+            errors.push('Название содержит недопустимые символы');
+        }
+    }
+    
+    // Validate amount
+    if (data.amount === undefined || data.amount === null || data.amount === '') {
+        errors.push('Сумма обязательна');
+    } else {
+        const amount = typeof data.amount === 'string' ? parseFloat(data.amount) : Number(data.amount);
+        if (isNaN(amount)) {
+            errors.push('Сумма должна быть числом');
+        } else if (amount < 0) {
+            errors.push('Сумма не может быть отрицательной');
+        } else if (amount > 1000000000) {
+            errors.push('Сумма слишком большая (максимум 1,000,000,000)');
+        } else if (!isFinite(amount)) {
+            errors.push('Сумма должна быть конечным числом');
+        }
+    }
+    
+    // Validate currency
+    const validCurrencies = ['RUB', 'USD', 'WON', 'KZT'];
+    if (data.currency && !validCurrencies.includes(data.currency)) {
+        errors.push('Недопустимая валюта');
+    }
+    
+    // Validate date (spentAt)
+    if (!data.spentAt) {
+        errors.push('Дата обязательна');
+    } else {
+        const date = new Date(data.spentAt);
+        if (isNaN(date.getTime())) {
+            errors.push('Некорректная дата');
+        } else {
+            const now = new Date();
+            const maxPast = new Date(now.getFullYear() - 10, 0, 1);
+            const maxFuture = new Date(now.getFullYear() + 1, 11, 31);
+            
+            if (date < maxPast) {
+                errors.push('Дата слишком далеко в прошлом');
+            } else if (date > maxFuture) {
+                errors.push('Дата слишком далеко в будущем');
+            }
+        }
+    }
+    
+    // Validate category
+    if (data.category && typeof data.category === 'string') {
+        if (data.category.length > 50) {
+            errors.push('Название категории слишком длинное (максимум 50 символов)');
+        }
+    }
+    
+    // Validate note
+    if (data.note && typeof data.note === 'string') {
+        if (data.note.length > 300) {
+            errors.push('Заметка слишком длинная (максимум 300 символов)');
+        }
+        if (/<script|javascript:|onerror=|onload=/i.test(data.note)) {
+            errors.push('Заметка содержит недопустимые символы');
+        }
+    }
+    
+    // Validate color (hex color)
+    if (data.color && typeof data.color === 'string') {
+        if (!/^#[0-9A-Fa-f]{6}$/.test(data.color)) {
+            errors.push('Некорректный формат цвета (должен быть hex, например #a78bfa)');
+        }
+    }
+    
+    return {
+        valid: errors.length === 0,
+        errors
+    };
+}
+
+/**
+ * Validates and sanitizes expense data
+ * @param {Object} data - Raw expense data
+ * @returns {{valid: boolean, errors: string[], data: Object}} Sanitized data
+ */
+export function validateAndSanitizeExpense(data) {
+    const validation = validateExpense(data);
+    
+    if (!validation.valid) {
+        return {
+            valid: false,
+            errors: validation.errors,
+            data: null
+        };
+    }
+    
+    const sanitized = {
+        ...data,
+        title: sanitizeString(data.title),
+        amount: typeof data.amount === 'string' ? parseFloat(data.amount) : Number(data.amount),
+        currency: data.currency || 'RUB',
+        currencySymbol: data.currencySymbol || '₽',
+        spentAt: data.spentAt,
+        category: data.category ? sanitizeString(data.category) : 'Общие',
+        color: data.color || '#a78bfa',
+        note: data.note ? sanitizeString(data.note) : ''
+    };
+    
+    return {
+        valid: true,
+        errors: [],
+        data: sanitized
+    };
+}
