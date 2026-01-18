@@ -805,6 +805,19 @@ bot.onText(/\/start/, async (msg) => {
     bot.sendMessage(chatId, message);
 });
 
+// Privacy policy shortcut
+bot.onText(/\/privacy/i, async (msg) => {
+    const chatId = msg.chat.id;
+    const shortRu =
+        '🔒 Политика конфиденциальности (коротко):\n' +
+        '• Мы храним ваш Telegram ID и данные подписок в Firebase.\n' +
+        '• Голосовые (если включены) отправляются в OpenAI для распознавания команды.\n' +
+        '• Запросы на удаление/вопросы: akzhaiyk@proton.me\n\n' +
+        'Полный текст: PRIVACY_POLICY.md (в репозитории).';
+
+    bot.sendMessage(chatId, shortRu);
+});
+
 // Admin command: /broadcast <message> - Send message to all users
 bot.onText(/\/broadcast\s+(.+)/s, async (msg, match) => {
     const chatId = msg.chat.id;

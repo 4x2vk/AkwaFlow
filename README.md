@@ -34,6 +34,12 @@ You'll need:
 - A Firebase project
 - A Telegram bot token (if you want the bot feature)
 
+---
+
+## 🔒 Privacy
+
+See [`PRIVACY_POLICY.md`](./PRIVACY_POLICY.md).
+
 ### Installation
 
 ```bash
