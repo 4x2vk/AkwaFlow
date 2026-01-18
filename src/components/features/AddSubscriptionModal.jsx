@@ -12,7 +12,7 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
     const [formData, setFormData] = useState({
         name: '',
         cost: '',
-        currency: 'RUB',
+        currency: 'WON',
         date: '',
         category: 'Общие',
         color: '#a78bfa',
@@ -20,9 +20,9 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
     });
 
     const currencies = [
+        { code: 'WON', symbol: '₩' },
         { code: 'RUB', symbol: '₽' },
         { code: 'USD', symbol: '$' },
-        { code: 'WON', symbol: '₩' },
         { code: 'KZT', symbol: '₸' }
     ];
 
@@ -46,17 +46,17 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
             setFormData({
                 name: initialData.name,
                 cost: initialData.cost,
-                currency: initialData.currency || 'RUB',
+                currency: initialData.currency || 'WON',
                 date: initialData.nextPaymentDate || '',
                 category: initialData.category || 'Общие',
-                color: initialData.color || '#00D68F',
+                color: initialData.color || '#a78bfa',
                 billingPeriod: billingPeriod
             });
         } else {
             setFormData({
                 name: '',
                 cost: '',
-                currency: 'RUB',
+                currency: 'WON',
                 date: '',
                 category: 'Общие',
                 color: '#a78bfa',
@@ -70,7 +70,7 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         const selectedCat = uniqueCategories.find(c => c.name === formData.category);
-        const currencySymbol = currencies.find(c => c.code === formData.currency)?.symbol || '₽';
+        const currencySymbol = currencies.find(c => c.code === formData.currency)?.symbol || '₩';
 
         // Determine cycle text based on billing period
         let cycleText = 'Ежемесячно';
