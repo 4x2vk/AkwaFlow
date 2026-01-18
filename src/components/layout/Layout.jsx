@@ -4,11 +4,15 @@ import { BottomNav } from './BottomNav';
 import { useAuth } from '../../context/AuthContext';
 import { useAdmin } from '../../context/AdminContext';
 import { Link } from 'react-router-dom';
+import { Card } from '../ui/Card';
+import { Button } from '../ui/Button';
+import { useAppUpdate } from '../../lib/appUpdate';
 
 export function Layout({ children }) {
     const { user } = useAuth();
     const { isAdmin } = useAdmin();
     const [logoError, setLogoError] = useState(false);
+    const { updateAvailable, infoText, applyUpdate } = useAppUpdate();
     return (
         <div className="min-h-screen bg-background text-text flex flex-col">
             <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-white/5">
@@ -61,6 +65,24 @@ export function Layout({ children }) {
                     children
                 )}
             </main>
+
+            {user && updateAvailable && (
+                <div className="fixed left-0 right-0 bottom-20 z-50 px-4">
+                    <div className="max-w-md mx-auto">
+                        <Card className="bg-surface border-white/10 p-4 flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="text-sm font-bold text-white">Доступно обновление</div>
+                                <div className="text-xs text-text-secondary truncate">
+                                    {infoText || 'Нажмите «Обновить», чтобы применить новую версию.'}
+                                </div>
+                            </div>
+                            <Button size="sm" className="font-bold" onClick={applyUpdate}>
+                                Обновить
+                            </Button>
+                        </Card>
+                    </div>
+                </div>
+            )}
 
             <BottomNav />
         </div>
