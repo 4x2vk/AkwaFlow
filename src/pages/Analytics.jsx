@@ -349,7 +349,7 @@ export default function Analytics() {
                 </div>
 
                 <Card className="bg-surface border-white/5 p-4">
-                    <h3 className="text-sm font-bold text-white mb-4">Стабильные расходы по категориям (в месяц)</h3>
+                    <h3 className="text-sm font-bold text-white mb-4">Подписки по категориям (в месяц)</h3>
                     <div className="h-64 w-full flex flex-col items-center justify-center">
                         <ResponsiveContainer width="100%" height={200}>
                             <PieChart>
@@ -465,7 +465,7 @@ export default function Analytics() {
                 </Card>
 
                 <Card className="bg-surface border-white/5 p-4">
-                    <h3 className="text-sm font-bold text-white mb-4">По месяцам (до текущего): стабильные vs расходы</h3>
+                    <h3 className="text-sm font-bold text-white mb-4">Подписки и расходы по месяцам</h3>
                     <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={monthlyCompareData} margin={{ top: 5, right: 5, left: 1, bottom: 1 }}>
@@ -522,7 +522,7 @@ export default function Analytics() {
                                     }}
                                     formatter={(value, name) => {
                                         const labelMap = {
-                                            subscriptions: 'Стабильные',
+                                            subscriptions: 'Подписки',
                                             expenses: 'Расходы',
                                             total: 'Итого'
                                         };
