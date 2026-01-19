@@ -6,7 +6,7 @@
 # AkwaFlow
 
 ![Status](https://img.shields.io/badge/status-live-success?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.0.0-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.1.0-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 
 > Because tracking subscriptions shouldn't be a subscription to stress
