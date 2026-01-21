@@ -44,6 +44,7 @@ const db = admin.firestore();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const webAppUrl = process.env.WEB_APP_URL || 'https://akwaflow-manager-v1.web.app';
 const openaiApiKey = process.env.OPENAI_API_KEY;
+const RUN_MODE = process.env.RUN_MODE || 'bot'; // 'bot' | 'selftest'
 
 // Admin IDs - comma-separated list of Telegram user IDs who can send broadcasts
 // Example: ADMIN_IDS=123456789,987654321
@@ -54,7 +55,7 @@ const isAdmin = (userId) => {
     return adminIds.includes(String(userId));
 };
 
-if (!token) {
+if (!token && RUN_MODE === 'bot') {
     console.error("❌ CRTICAL ERROR: TELEGRAM_BOT_TOKEN is missing provided!");
     console.error("Please set TELEGRAM_BOT_TOKEN environment variable");
     // Don't exit - let Railway see the error in logs
@@ -62,39 +63,42 @@ if (!token) {
 }
 
 let bot;
-try {
-    // Only enable polling in production (Railway/server)
-    // Set ENABLE_POLLING=true in environment to force polling
-    const enablePolling = process.env.ENABLE_POLLING === 'true' || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
-    
-    if (enablePolling) {
-        bot = new TelegramBot(token, { polling: true });
-        console.log('✅ Telegram Bot initialized with polling');
-    } else {
-        bot = new TelegramBot(token, { polling: false });
-        console.log('✅ Telegram Bot initialized (polling disabled - use webhook or set ENABLE_POLLING=true)');
+if (RUN_MODE === 'bot') {
+    try {
+        // Only enable polling in production (Railway/server)
+        // Set ENABLE_POLLING=true in environment to force polling
+        const enablePolling = process.env.ENABLE_POLLING === 'true' || process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production';
+        
+        if (enablePolling) {
+            bot = new TelegramBot(token, { polling: true });
+            console.log('✅ Telegram Bot initialized with polling');
+        } else {
+            bot = new TelegramBot(token, { polling: false });
+            console.log('✅ Telegram Bot initialized (polling disabled - use webhook or set ENABLE_POLLING=true)');
+        }
+    } catch (error) {
+        console.error('❌ Error initializing Telegram Bot:', error);
+        process.exit(1);
     }
-} catch (error) {
-    console.error('❌ Error initializing Telegram Bot:', error);
-    process.exit(1);
+
+    // Handle bot errors
+    bot.on('error', (error) => {
+        console.error('❌ Bot error:', error);
+    });
+
+    bot.on('polling_error', (error) => {
+        console.error('❌ Bot polling error:', error);
+        // Don't exit on polling errors - they can be temporary
+    });
 }
-
-// Handle bot errors
-bot.on('error', (error) => {
-    console.error('❌ Bot error:', error);
-});
-
-bot.on('polling_error', (error) => {
-    console.error('❌ Bot polling error:', error);
-    // Don't exit on polling errors - they can be temporary
-});
 
 // Currency Helper
 const detectCurrency = (input) => {
     const text = String(input || '').toLowerCase().trim();
 
     // helper: match token as standalone word-ish (prevents false positives)
-    const hasToken = (token) => new RegExp(`(^|[\\s,.;:()\\-])${token}([\\s,.;:()\\-]|$)`, 'i').test(text);
+    // allow digit before token to support "6000вон", "5000руб"
+    const hasToken = (token) => new RegExp(`(^|[\\s,.;:()\\-\\d])${token}([\\s,.;:()\\-]|$)`, 'i').test(text);
 
     // 1) KZT / Tenge
     // examples: "1000 тг", "1000 тенге", "1000 тенг", "1000 kzt", "1000 ₸"
@@ -169,6 +173,14 @@ const normalizeText = (input) => {
         .trim();
 };
 
+// Language detection (rough): ru / en / ko
+const detectLanguage = (input) => {
+    const t = String(input || '');
+    if (/[ㄱ-ㅎㅏ-ㅣ가-힣]/.test(t)) return 'ko';
+    if (/[А-Яа-яЁё]/.test(t)) return 'ru';
+    return 'en';
+};
+
 // Intent detection (RU/EN + synonyms)
 const detectIntent = (rawText) => {
     const t = normalizeText(rawText).toLowerCase();
@@ -195,6 +207,103 @@ const detectIntent = (rawText) => {
     return 'unknown';
 };
 
+// Intent detection v2 (RU/EN/KO) + ambiguity support
+const detectIntentV2 = (rawText) => {
+    const raw = String(rawText || '');
+    const t = normalizeText(raw).toLowerCase();
+    const lang = detectLanguage(rawText);
+    const has = (re) => re.test(t);
+    // Unicode-aware token matcher (JS \\b is ASCII-only and fails for RU/KO)
+    const hasToken = (token) => new RegExp(`(^|[^\\p{L}\\p{N}_])${token}([^\\p{L}\\p{N}_]|$)`, 'iu').test(t);
+    const hasAnyToken = (tokens) => tokens.some((tok) => hasToken(tok));
+
+    // Commands / global
+    if (has(/^\/start\b/)) return { intent: 'start', lang, confidence: 1 };
+    if (has(/^\/help\b/) || has(/\b(помощь|help|хелп|что ты умеешь|как пользоваться)\b/)) return { intent: 'help', lang, confidence: 1 };
+    if (has(/^\/cancel\b/) || has(/\b(отмена|cancel|стоп|stop)\b/)) return { intent: 'cancel', lang, confidence: 1 };
+
+    // Lists
+    if (
+        t.includes('мои подписки') ||
+        t.includes('список подписок') ||
+        t.includes('покажи подписки') ||
+        t.includes('показать подписки') ||
+        t.includes('my subscriptions') ||
+        t.includes('subscriptions list') ||
+        t.includes('내 구독') ||
+        t.includes('구독 목록') ||
+        t.includes('구독 리스트')
+    ) return { intent: 'subscription_list', lang, confidence: 0.95 };
+
+    if (
+        t.includes('мои расходы') ||
+        t.includes('список расходов') ||
+        t.includes('покажи расходы') ||
+        t.includes('показать расходы') ||
+        t.includes('my expenses') ||
+        t.includes('expenses list') ||
+        t.includes('내 지출') ||
+        t.includes('지출 목록') ||
+        t.includes('지출 리스트')
+    ) return { intent: 'expense_list', lang, confidence: 0.95 };
+
+    if (
+        t.includes('мои доходы') ||
+        t.includes('список доходов') ||
+        t.includes('покажи доходы') ||
+        t.includes('показать доходы') ||
+        t.includes('my incomes') ||
+        t.includes('my income') ||
+        t.includes('incomes list') ||
+        t.includes('내 수입') ||
+        t.includes('수입 목록') ||
+        t.includes('수입 리스트')
+    ) return { intent: 'income_list', lang, confidence: 0.95 };
+
+    // Remove
+    const removeRe = /\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/;
+    if (has(removeRe) || has(/^\/(remove|delete)\b/)) {
+        if (hasAnyToken(['подписк', 'subscription', '구독'])) return { intent: 'subscription_remove', lang, confidence: 0.95 };
+        if (hasAnyToken(['расход', 'расходы', 'трата', 'траты', 'expense', 'spent', '지출'])) return { intent: 'expense_remove', lang, confidence: 0.95 };
+        if (hasAnyToken(['доход', 'доходы', 'income', 'earned', '수입'])) return { intent: 'income_remove', lang, confidence: 0.95 };
+        return { intent: 'remove', lang, confidence: 0.7 }; // legacy: subscription remove by name
+    }
+
+    // Explicit add type triggers
+    const expenseTokens = ['расход', 'расходы', 'трата', 'траты', 'потратил', 'потратила', 'купил', 'купила', 'spend', 'spent', 'expense', '지출', '썼어', '사용', '결제'];
+    const incomeTokens = ['доход', 'доходы', 'прибыль', 'получил', 'получила', 'заработал', 'заработала', 'income', 'earned', '수입', '월급', '받았'];
+    const subTokens = ['подписк', 'subscription', 'sub', '구독', '매달'];
+    const addVerbTokens = ['добав', 'создай', 'запиши', 'оформи', 'подключи', 'add', '추가', '등록'];
+
+    if (hasAnyToken(expenseTokens)) return { intent: 'expense_add', lang, confidence: 0.9 };
+    if (hasAnyToken(incomeTokens)) return { intent: 'income_add', lang, confidence: 0.9 };
+    if (hasAnyToken(subTokens)) return { intent: 'subscription_add', lang, confidence: 0.85 };
+
+    if (has(/\b(привет|hello|hi)\b/) || (lang === 'ko' && has(/\b(안녕|안녕하세요)\b/))) return { intent: 'greet', lang, confidence: 0.8 };
+
+    // Heuristic: contains money (numbers + currency)
+    const hasMoney =
+        /\d/.test(t) &&
+        (
+            /[₽₩₸$€]/.test(t) ||
+            hasAnyToken(['rub', 'usd', 'kzt', 'krw', 'won', 'eur', 'руб', 'дол', 'тен', 'тг', 'вон', '원', '만원', '천원']) ||
+            /(\d)\s*(вон|원|руб|р(?![a-z])|тг|тенге|won|krw|usd|rub|kzt|eur)/iu.test(t)
+        );
+
+    // “add + money” but no type -> treat as subscription add (as before), low confidence
+    if (hasMoney && hasAnyToken(addVerbTokens)) {
+        return { intent: 'subscription_add', lang, confidence: 0.6 };
+    }
+
+    // Money but no clear type -> ask
+    if (hasMoney) return { intent: 'add_ambiguous', lang, confidence: 0.45 };
+
+    // Backward-compatible: old "list" keyword
+    if (hasAnyToken(['список', 'list', 'subscriptions'])) return { intent: 'subscription_list', lang, confidence: 0.55 };
+
+    return { intent: 'unknown', lang, confidence: 0.1 };
+};
+
 const buildHelpMessage = () => {
     return [
         'Я помогу быстро вести ваши подписки и расходы — прямо здесь, в Telegram.',
@@ -209,6 +318,7 @@ const buildHelpMessage = () => {
         '• удалять подписки по названию',
         '• удалять доходы и расходы по названию',
         '• понимать разные валюты (₩ / ₽ / $ / ₸ и слова вроде “вон”, “руб”, “тенге”)',
+        '• понимать базовые команды на русском/английском/корейском',
         '',
         'Примеры:',
         '• «Добавь Netflix 10000 вон 12 числа»',
@@ -218,6 +328,8 @@ const buildHelpMessage = () => {
         '• «Потратил 5000₩ такси вчера»',
         '• «Доход 500000₩ зарплата сегодня»',
         '• «Получил 2000$ фриланс 17.02»',
+        '• «Starbucks 6000 won today»',
+        '• «스타벅스 6000원 오늘»',
         '• «Мои расходы»',
         '• «Мои доходы»',
         '• «Удали Netflix»',
@@ -382,9 +494,164 @@ const detectBillingPeriod = (rawText) => {
     return 'monthly';
 };
 
+// Date parser for expenses/incomes (RU/EN/KO relative + numeric + RU months)
+const parseTransactionDate = (rawText) => {
+    const t = normalizeText(rawText).toLowerCase();
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    if (/\b(сегодня|today|오늘)\b/.test(t)) return new Date(now).toISOString();
+    if (/\b(вчера|yesterday|어제)\b/.test(t)) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - 1);
+        return d.toISOString();
+    }
+    if (/\b(завтра|tomorrow|내일)\b/.test(t)) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 1);
+        return d.toISOString();
+    }
+    if (/\b(послезавтра|day\s*after\s*tomorrow|모레)\b/.test(t)) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + 2);
+        return d.toISOString();
+    }
+
+    const dm = t.match(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/);
+    if (dm) {
+        const day = parseInt(dm[1], 10);
+        const month = parseInt(dm[2], 10) - 1;
+        const yearRaw = dm[3];
+        let year = now.getFullYear();
+        if (yearRaw) {
+            const y = parseInt(yearRaw, 10);
+            year = y < 100 ? 2000 + y : y;
+        }
+        const d = new Date(year, month, day);
+        if (!isNaN(d.getTime())) return d.toISOString();
+    }
+
+    const monthMap = {
+        янв: 0, фев: 1, мар: 2, апр: 3, май: 4, июн: 5, июл: 6, авг: 7, сен: 8, окт: 9, ноя: 10, дек: 11
+    };
+    const m = t.match(/\b(\d{1,2})\s+(янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:т[а])?|апр(?:ел[ья])?|ма[йя]|июн(?:[ья])?|июл(?:[ья])?|авг(?:уст[а])?|сен(?:тябр[ья])?|окт(?:ябр[ья])?|ноя(?:бр[ья])?|дек(?:ябр[ья])?)\b/);
+    if (m) {
+        const day = parseInt(m[1], 10);
+        const token = m[2].slice(0, 3);
+        const month = monthMap[token];
+        if (month !== undefined) {
+            const d = new Date(now.getFullYear(), month, day);
+            if (!isNaN(d.getTime())) return d.toISOString();
+        }
+    }
+
+    const dayOnly = t.match(/\b(\d{1,2})\s*(числа|число|го|е)\b/);
+    if (dayOnly) {
+        const day = parseInt(dayOnly[1], 10);
+        if (day >= 1 && day <= 31) {
+            const d = new Date(now.getFullYear(), now.getMonth(), day);
+            if (!isNaN(d.getTime())) return d.toISOString();
+        }
+    }
+
+    return new Date(now).toISOString();
+};
+
+const extractTitleGeneric = (rawText) => {
+    const normalized = normalizeText(rawText);
+    const lower = normalized.toLowerCase();
+
+    const stop = new Set([
+        // RU verbs/labels
+        'добавь', 'добавить', 'создай', 'запиши', 'оформи', 'подключи',
+        'расход', 'расходы', 'трата', 'траты', 'потратил', 'потратила', 'купил', 'купила',
+        'доход', 'доходы', 'прибыль', 'прибыл', 'заработал', 'заработала', 'получил', 'получила',
+        'подписка', 'подписки', 'подписку',
+        // EN
+        'add', 'create', 'save', 'record', 'expense', 'spent', 'spend', 'income', 'earned', 'subscription', 'sub',
+        // KO (minimal)
+        '추가', '등록', '지출', '수입', '구독', '매달', '월급', '결제', '사용', '썼어',
+        // Prepositions / misc
+        'на', 'за', 'в', 'for', 'on', 'at',
+        // Date words
+        'сегодня', 'вчера', 'завтра', 'послезавтра', 'через', 'today', 'yesterday', 'tomorrow', '오늘', '어제', '내일', '모레',
+        'числа', 'число', 'го', 'е', 'th',
+        // Currency tokens
+        '₩', '₽', '₸', '$', '€',
+        'won', 'krw', 'rub', 'usd', 'kzt', 'eur',
+        'руб', 'руб.', 'рубль', 'рубля', 'рублей',
+        'доллар', 'доллара', 'долларов', 'бакс', 'баксов',
+        'тенге', 'тенг', 'тг',
+        'вон', 'вона', 'воны',
+        '원', '만원', '천원'
+    ]);
+
+    const tokens = lower.split(/\s+/g).filter(Boolean);
+    const out = [];
+
+    for (let tok of tokens) {
+        // Drop pure numbers
+        if (/^\d+(?:[.,]\d+)?$/.test(tok)) continue;
+
+        // If token mixes digits+letters like "6000вон" -> strip digits -> "вон"
+        if (/\d/.test(tok) && /[a-zа-яё가-힣]/i.test(tok)) {
+            tok = tok.replace(/[\d.,]+/g, '');
+        }
+
+        // Remove leftover currency symbols attached
+        tok = tok.replace(/[₽₩₸$€]/g, '');
+        tok = tok.trim();
+        if (!tok) continue;
+        // If it became a pure number after stripping symbols, drop it
+        if (/^\d+(?:[.,]\d+)?$/.test(tok)) continue;
+        if (stop.has(tok)) continue;
+
+        // Very short noise after stripping (e.g. single-letter tokens)
+        if (tok.length < 2) continue;
+
+        out.push(tok);
+    }
+
+    const title = out.join(' ').trim();
+    if (!title || title.length < 2) return '';
+    return title.length > 120 ? title.slice(0, 120) : title;
+};
+
+const extractSlotsV2 = (rawText, intentInfo) => {
+    const normalized = normalizeText(rawText);
+    const lang = intentInfo?.lang || detectLanguage(rawText);
+    const intent = intentInfo?.intent || 'unknown';
+
+    const { code, symbol } = detectCurrency(normalized);
+    const amount = intent === 'subscription_add' ? extractSubscriptionCost(normalized) : extractCost(normalized);
+
+    const billingPeriod = detectBillingPeriod(normalized);
+    const subscriptionDate = parseDateEnhanced(normalized);
+    const txDate = parseTransactionDate(normalized);
+    const title = extractTitleGeneric(normalized);
+
+    return {
+        lang,
+        intent,
+        amount,
+        currencyCode: code || 'WON',
+        currencySymbol: symbol || '₩',
+        billingPeriod,
+        subscription: {
+            nextPaymentDate: subscriptionDate?.date,
+            cycle: subscriptionDate?.cycle
+        },
+        transaction: {
+            at: txDate
+        },
+        title
+    };
+};
+
 const extractCost = (rawText) => {
     const text = normalizeText(rawText);
-    const m = text.match(/(\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)/);
+    // Prefer continuous digits first (handles "6000вон", "5000₩", etc.)
+    const m = text.match(/(\d+(?:[.,]\d+)?|\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?)/);
     if (!m) return null;
     const n = parseFloat(m[1].replace(/\s|\u00A0/g, '').replace(',', '.'));
     return Number.isFinite(n) ? n : null;
@@ -395,7 +662,8 @@ const extractCost = (rawText) => {
 // Здесь первая цифра = день, а реальная стоимость = последняя цифра рядом с валютой.
 const extractSubscriptionCost = (rawText) => {
     const text = normalizeText(rawText);
-    const numberRegex = /(\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)/g;
+    // Prefer continuous digits first (handles "5000вон", "6000₩" etc.)
+    const numberRegex = /(\d+(?:[.,]\d+)?|\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?)/g;
     const currencyRegex = /(₽|₩|₸|\$|\b(rub|usd|kzt|krw|won|руб(ль|ля|лей)?|доллар(а|ов)?|бакс(ов)?|тенге|тенг|тг|вон(а|ы)?)\b)/i;
 
     const matches = [];
@@ -542,13 +810,15 @@ const transcribeAudio = async (audioFilePath) => {
 const processTextCommand = async (chatId, text) => {
     const rawText = String(text || '');
     const normalized = normalizeText(rawText);
-    const intent = detectIntent(normalized);
+    const intentInfo = detectIntentV2(normalized);
+    const intent = intentInfo.intent;
+    const slots = extractSlotsV2(normalized, intentInfo);
 
     // Ensure user document exists when they interact
     await ensureUserExists(chatId);
 
     // Global cancel (works during any pending flow)
-    if (/\b(отмена|cancel|стоп|stop)\b/i.test(normalized) || /^\/cancel\b/i.test(rawText)) {
+    if (intent === 'cancel' || /\b(отмена|cancel|стоп|stop)\b/i.test(normalized) || /^\/cancel\b/i.test(rawText)) {
         clearPending(chatId);
         bot.sendMessage(chatId, 'Окей, отменил. Если захотите — начнём заново 🙂');
         return;
@@ -561,6 +831,115 @@ const processTextCommand = async (chatId, text) => {
         if (intent === 'help' || intent === 'start') {
             bot.sendMessage(chatId, buildHelpMessage());
             return;
+        }
+
+        if (pending.type === 'clarify_add_type') {
+            const answer = normalized.toLowerCase().trim();
+            const idx = parseInt(answer, 10);
+            const choice = !isNaN(idx) ? idx : null;
+            const looksExpense = /\b(расход|трата|expense|spent|지출)\b/i.test(answer) || choice === 1;
+            const looksIncome = /\b(доход|income|earned|수입)\b/i.test(answer) || choice === 2;
+            const looksSub = /\b(подписк|subscription|구독)\b/i.test(answer) || choice === 3;
+
+            const originalText = pending.data?.rawText || '';
+            if (!originalText) {
+                clearPending(chatId);
+                bot.sendMessage(chatId, buildHelpMessage());
+                return;
+            }
+
+            if (!looksExpense && !looksIncome && !looksSub) {
+                bot.sendMessage(chatId, 'Не понял выбор. Ответьте: 1 (расход), 2 (доход) или 3 (подписка).');
+                return;
+            }
+
+            const baseIntentInfo = detectIntentV2(originalText);
+            const baseSlots = extractSlotsV2(originalText, baseIntentInfo);
+            const amount = baseSlots.amount;
+            const title = baseSlots.title;
+
+            if (!title || title.length < 2) {
+                clearPending(chatId);
+                bot.sendMessage(chatId, 'Не вижу название 😅 Напишите, пожалуйста, что именно: например «кофе» или «Netflix».');
+                return;
+            }
+            if (amount === null) {
+                clearPending(chatId);
+                bot.sendMessage(chatId, 'Не вижу сумму 😅 Напишите число, например: «6000₩» или «5$».');
+                return;
+            }
+
+            try {
+                const userDocRef = db.collection('users').doc(String(chatId));
+
+                if (looksExpense) {
+                    const expenseData = {
+                        title,
+                        amount,
+                        currency: baseSlots.currencyCode || 'WON',
+                        currencySymbol: baseSlots.currencySymbol || '₩',
+                        spentAt: baseSlots.transaction?.at,
+                        category: 'Общие',
+                        color: '#a78bfa',
+                        note: '',
+                        icon: String(title || '?')[0].toUpperCase(),
+                        iconUrl: null,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp()
+                    };
+                    await userDocRef.collection('expenses').add(expenseData);
+                    clearPending(chatId);
+                    const dateStr = expenseData.spentAt ? new Date(expenseData.spentAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—';
+                    bot.sendMessage(chatId, `✅ Готово! Добавил расход "${title}" на сумму ${expenseData.currencySymbol}${Number(amount).toLocaleString()}.\nДата: ${dateStr}. 😊`);
+                    return;
+                }
+
+                if (looksIncome) {
+                    const incomeData = {
+                        title,
+                        amount,
+                        currency: baseSlots.currencyCode || 'WON',
+                        currencySymbol: baseSlots.currencySymbol || '₩',
+                        receivedAt: baseSlots.transaction?.at,
+                        category: 'Общие',
+                        color: '#22C55E',
+                        note: '',
+                        icon: String(title || '?')[0].toUpperCase(),
+                        iconUrl: null,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp()
+                    };
+                    await userDocRef.collection('incomes').add(incomeData);
+                    clearPending(chatId);
+                    const dateStr = incomeData.receivedAt ? new Date(incomeData.receivedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—';
+                    bot.sendMessage(chatId, `✅ Готово! Добавил доход "${title}" на сумму ${incomeData.currencySymbol}${Number(amount).toLocaleString()}.\nДата: ${dateStr}. 😊`);
+                    return;
+                }
+
+                const subscriptionData = {
+                    name: title,
+                    cost: amount,
+                    currency: baseSlots.currencyCode || 'WON',
+                    currencySymbol: baseSlots.currencySymbol || '₩',
+                    billingPeriod: baseSlots.billingPeriod || 'monthly',
+                    cycle: baseSlots.subscription?.cycle || 'Каждый 1 числа',
+                    nextPaymentDate: baseSlots.subscription?.nextPaymentDate,
+                    category: 'Общие',
+                    color: '#a78bfa',
+                    icon: String(title || '?')[0].toUpperCase(),
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                };
+                await userDocRef.collection('subscriptions').add(subscriptionData);
+                clearPending(chatId);
+                const dateStr = subscriptionData.nextPaymentDate
+                    ? new Date(subscriptionData.nextPaymentDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+                    : '—';
+                bot.sendMessage(chatId, `✅ Готово! Добавил подписку "${subscriptionData.name}" на сумму ${subscriptionData.currencySymbol}${Number(subscriptionData.cost).toLocaleString()}.\nСледующий платеж: ${dateStr}. 😊`);
+                return;
+            } catch (e) {
+                console.error('[BOT] clarify_add_type finalize error:', e);
+                clearPending(chatId);
+                bot.sendMessage(chatId, '😔 Не получилось сохранить. Попробуйте, пожалуйста, ещё раз чуть позже.');
+                return;
+            }
         }
 
         if (pending.type === 'add') {
@@ -751,7 +1130,7 @@ const processTextCommand = async (chatId, text) => {
     }
 
     // LIST (more phrases handled by detectIntent)
-    if (intent === 'list') {
+    if (intent === 'subscription_list') {
         try {
             const snapshot = await db.collection('users').doc(String(chatId)).collection('subscriptions').get();
             if (snapshot.empty) {
@@ -840,87 +1219,9 @@ const processTextCommand = async (chatId, text) => {
 
     // EXPENSE ADD
     if (intent === 'expense_add') {
-        const amount = extractCost(normalized);
-        const { code, symbol } = detectCurrency(normalized);
-
-        const parseExpenseDate = (text) => {
-            const t = normalizeText(text).toLowerCase();
-            const now = new Date();
-            now.setHours(0, 0, 0, 0);
-
-            if (/\bсегодня\b/.test(t)) return new Date(now).toISOString();
-            if (/\bвчера\b/.test(t)) {
-                const d = new Date(now);
-                d.setDate(d.getDate() - 1);
-                return d.toISOString();
-            }
-            if (/\bзавтра\b/.test(t)) {
-                const d = new Date(now);
-                d.setDate(d.getDate() + 1);
-                return d.toISOString();
-            }
-            if (/\bпослезавтра\b/.test(t)) {
-                const d = new Date(now);
-                d.setDate(d.getDate() + 2);
-                return d.toISOString();
-            }
-
-            const dm = t.match(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/);
-            if (dm) {
-                const day = parseInt(dm[1], 10);
-                const month = parseInt(dm[2], 10) - 1;
-                const yearRaw = dm[3];
-                let year = now.getFullYear();
-                if (yearRaw) {
-                    const y = parseInt(yearRaw, 10);
-                    year = y < 100 ? 2000 + y : y;
-                }
-                const d = new Date(year, month, day);
-                if (!isNaN(d.getTime())) return d.toISOString();
-            }
-
-            const monthMap = {
-                янв: 0, фев: 1, мар: 2, апр: 3, май: 4, июн: 5, июл: 6, авг: 7, сен: 8, окт: 9, ноя: 10, дек: 11
-            };
-            const m = t.match(/\b(\d{1,2})\s+(янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:т[а])?|апр(?:ел[ья])?|ма[йя]|июн(?:[ья])?|июл(?:[ья])?|авг(?:уст[а])?|сен(?:тябр[ья])?|окт(?:ябр[ья])?|ноя(?:бр[ья])?|дек(?:ябр[ья])?)\b/);
-            if (m) {
-                const day = parseInt(m[1], 10);
-                const token = m[2].slice(0, 3);
-                const month = monthMap[token];
-                if (month !== undefined) {
-                    const d = new Date(now.getFullYear(), month, day);
-                    if (!isNaN(d.getTime())) return d.toISOString();
-                }
-            }
-
-            const dayOnly = t.match(/\b(\d{1,2})\s*(числа|число|го|е)\b/);
-            if (dayOnly) {
-                const day = parseInt(dayOnly[1], 10);
-                if (day >= 1 && day <= 31) {
-                    const d = new Date(now.getFullYear(), now.getMonth(), day);
-                    if (!isNaN(d.getTime())) return d.toISOString();
-                }
-            }
-
-            return new Date(now).toISOString();
-        };
-
-        const spentAt = parseExpenseDate(normalized);
-
-        // Extract title by stripping common words, numbers, currency and date parts
-        let titleCandidate = normalized;
-        titleCandidate = titleCandidate.replace(/\b(расход|расходы|трата|траты|потратил|потратила|купил|купила|spend|spent|expense)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/\b(на|за|в)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/(\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)/g, ' ');
-        titleCandidate = titleCandidate.replace(/[₽₩₸$]/g, ' ');
-        titleCandidate = titleCandidate.replace(/\b(rub|usd|kzt|krw|won|руб(ль|ля|лей)?|доллар(а|ов)?|бакс(ов)?|тенге|тенг|тг|вон(а|ы)?)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/\b(сегодня|вчера|завтра|послезавтра|через)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/\b(\d{1,2})\s*(числа|число|го|е)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/g, ' ');
-        titleCandidate = titleCandidate.replace(/\b(\d{1,2})\s+(янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:т[а])?|апр(?:ел[ья])?|ма[йя]|июн(?:[ья])?|июл(?:[ья])?|авг(?:уст[а])?|сен(?:тябр[ья])?|окт(?:ябр[ья])?|ноя(?:бр[ья])?|дек(?:ябр[ья])?)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/\s+/g, ' ').trim();
-
-        const title = titleCandidate;
+        const amount = slots.amount;
+        const spentAt = slots.transaction?.at;
+        const title = slots.title;
 
         if (!title || title.length < 2) {
             bot.sendMessage(chatId, 'Как назвать расход? Например: «Расход 12000 вон кафе сегодня». 🙂');
@@ -936,8 +1237,8 @@ const processTextCommand = async (chatId, text) => {
             const expenseData = {
                 title,
                 amount,
-                currency: code || 'WON',
-                currencySymbol: symbol || '₩',
+                currency: slots.currencyCode || 'WON',
+                currencySymbol: slots.currencySymbol || '₩',
                 spentAt,
                 category: 'Общие',
                 color: '#a78bfa',
@@ -969,87 +1270,9 @@ const processTextCommand = async (chatId, text) => {
 
     // INCOME ADD
     if (intent === 'income_add') {
-        const amount = extractCost(normalized);
-        const { code, symbol } = detectCurrency(normalized);
-
-        const parseIncomeDate = (text) => {
-            const t = normalizeText(text).toLowerCase();
-            const now = new Date();
-            now.setHours(0, 0, 0, 0);
-
-            if (/\bсегодня\b/.test(t)) return new Date(now).toISOString();
-            if (/\bвчера\b/.test(t)) {
-                const d = new Date(now);
-                d.setDate(d.getDate() - 1);
-                return d.toISOString();
-            }
-            if (/\bзавтра\b/.test(t)) {
-                const d = new Date(now);
-                d.setDate(d.getDate() + 1);
-                return d.toISOString();
-            }
-            if (/\bпослезавтра\b/.test(t)) {
-                const d = new Date(now);
-                d.setDate(d.getDate() + 2);
-                return d.toISOString();
-            }
-
-            const dm = t.match(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/);
-            if (dm) {
-                const day = parseInt(dm[1], 10);
-                const month = parseInt(dm[2], 10) - 1;
-                const yearRaw = dm[3];
-                let year = now.getFullYear();
-                if (yearRaw) {
-                    const y = parseInt(yearRaw, 10);
-                    year = y < 100 ? 2000 + y : y;
-                }
-                const d = new Date(year, month, day);
-                if (!isNaN(d.getTime())) return d.toISOString();
-            }
-
-            const monthMap = {
-                янв: 0, фев: 1, мар: 2, апр: 3, май: 4, июн: 5, июл: 6, авг: 7, сен: 8, окт: 9, ноя: 10, дек: 11
-            };
-            const m = t.match(/\b(\d{1,2})\s+(янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:т[а])?|апр(?:ел[ья])?|ма[йя]|июн(?:[ья])?|июл(?:[ья])?|авг(?:уст[а])?|сен(?:тябр[ья])?|окт(?:ябр[ья])?|ноя(?:бр[ья])?|дек(?:ябр[ья])?)\b/);
-            if (m) {
-                const day = parseInt(m[1], 10);
-                const token = m[2].slice(0, 3);
-                const month = monthMap[token];
-                if (month !== undefined) {
-                    const d = new Date(now.getFullYear(), month, day);
-                    if (!isNaN(d.getTime())) return d.toISOString();
-                }
-            }
-
-            const dayOnly = t.match(/\b(\d{1,2})\s*(числа|число|го|е)\b/);
-            if (dayOnly) {
-                const day = parseInt(dayOnly[1], 10);
-                if (day >= 1 && day <= 31) {
-                    const d = new Date(now.getFullYear(), now.getMonth(), day);
-                    if (!isNaN(d.getTime())) return d.toISOString();
-                }
-            }
-
-            return new Date(now).toISOString();
-        };
-
-        const receivedAt = parseIncomeDate(normalized);
-
-        // Extract title by stripping common words, numbers, currency and date parts
-        let titleCandidate = normalized;
-        titleCandidate = titleCandidate.replace(/\b(доход|доходы|прибыль|прибыл|заработал|заработала|получил|получила|income|earned)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/\b(на|за|в)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/(\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)/g, ' ');
-        titleCandidate = titleCandidate.replace(/[₽₩₸$]/g, ' ');
-        titleCandidate = titleCandidate.replace(/\b(rub|usd|kzt|krw|won|руб(ль|ля|лей)?|доллар(а|ов)?|бакс(ов)?|тенге|тенг|тг|вон(а|ы)?)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/\b(сегодня|вчера|завтра|послезавтра|через)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/\b(\d{1,2})\s*(числа|число|го|е)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/g, ' ');
-        titleCandidate = titleCandidate.replace(/\b(\d{1,2})\s+(янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:т[а])?|апр(?:ел[ья])?|ма[йя]|июн(?:[ья])?|июл(?:[ья])?|авг(?:уст[а])?|сен(?:тябр[ья])?|окт(?:ябр[ья])?|ноя(?:бр[ья])?|дек(?:ябр[ья])?)\b/gi, ' ');
-        titleCandidate = titleCandidate.replace(/\s+/g, ' ').trim();
-
-        const title = titleCandidate;
+        const amount = slots.amount;
+        const receivedAt = slots.transaction?.at;
+        const title = slots.title;
 
         if (!title || title.length < 2) {
             bot.sendMessage(chatId, 'Как назвать доход? Например: «Доход 500000₩ зарплата сегодня». 🙂');
@@ -1065,8 +1288,8 @@ const processTextCommand = async (chatId, text) => {
             const incomeData = {
                 title,
                 amount,
-                currency: code || 'WON',
-                currencySymbol: symbol || '₩',
+                currency: slots.currencyCode || 'WON',
+                currencySymbol: slots.currencySymbol || '₩',
                 receivedAt,
                 category: 'Общие',
                 color: '#22C55E',
@@ -1097,25 +1320,13 @@ const processTextCommand = async (chatId, text) => {
     }
 
     // ADD (robust parsing, supports different word order)
-    if (intent === 'add') {
-        const cost = extractSubscriptionCost(normalized);
-        const { code, symbol } = detectCurrency(normalized);
-        const billingPeriod = detectBillingPeriod(normalized);
+    if (intent === 'subscription_add' || intent === 'add') {
+        const cost = slots.amount;
+        const code = slots.currencyCode;
+        const symbol = slots.currencySymbol;
+        const billingPeriod = slots.billingPeriod;
         const { date, cycle } = parseDateEnhanced(normalized);
-
-        // Extract service name by stripping common words, numbers, currency and date parts
-        let nameCandidate = normalized;
-        nameCandidate = nameCandidate.replace(/\b(добав(ь|ить|ляй|им)|создай|запиши|оформи|подключи|add|за|for|на сумму|сумма|стоимость)\b/gi, ' ');
-        nameCandidate = nameCandidate.replace(/(\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)/g, ' ');
-        nameCandidate = nameCandidate.replace(/[₽₩₸$]/g, ' ');
-        nameCandidate = nameCandidate.replace(/\b(rub|usd|kzt|krw|won|руб(ль|ля|лей)?|доллар(а|ов)?|бакс(ов)?|тенге|тенг|тг|вон(а|ы)?)\b/gi, ' ');
-        nameCandidate = nameCandidate.replace(/\b(сегодня|завтра|послезавтра|через)\b/gi, ' ');
-        nameCandidate = nameCandidate.replace(/\b(\d{1,2})\s*(числа|число|го|е)\b/gi, ' ');
-        nameCandidate = nameCandidate.replace(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/g, ' ');
-        nameCandidate = nameCandidate.replace(/\b(\d{1,2})\s+(янв(?:ар[ья])?|фев(?:рал[ья])?|мар(?:т[а])?|апр(?:ел[ья])?|ма[йя]|июн(?:[ья])?|июл(?:[ья])?|авг(?:уст[а])?|сен(?:тябр[ья])?|окт(?:ябр[ья])?|ноя(?:бр[ья])?|дек(?:ябр[ья])?)\b/gi, ' ');
-        nameCandidate = nameCandidate.replace(/\s+/g, ' ').trim();
-
-        const name = nameCandidate;
+        const name = slots.title;
 
         if (!name || name.length < 2) {
             setPending(chatId, { type: 'add', step: 'ask_name', data: {} });
@@ -1169,7 +1380,7 @@ const processTextCommand = async (chatId, text) => {
     }
 
     // REMOVE (will be improved further, but already route here)
-    if (intent === 'remove') {
+    if (intent === 'remove' || intent === 'subscription_remove') {
         const t = normalizeText(normalized);
         let nameToRemove = t.replace(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/gi, ' ').trim();
         if (!nameToRemove) {
@@ -1331,8 +1542,30 @@ const processTextCommand = async (chatId, text) => {
         }
     }
 
+    if (intent === 'add_ambiguous') {
+        const amount = slots.amount;
+        const title = slots.title;
+        if (!title || title.length < 2 || amount === null) {
+            bot.sendMessage(chatId, `🤔 Я понял, что вы хотите что-то записать, но не вижу достаточно данных.\n\n${buildHelpMessage()}`);
+            return;
+        }
+
+        setPending(chatId, {
+            type: 'clarify_add_type',
+            step: 'choose_type',
+            data: { rawText: normalized }
+        });
+
+        bot.sendMessage(
+            chatId,
+            'Я понял данные, но не понял *тип операции*.\nВыберите:\n1) Расход\n2) Доход\n3) Подписка\n\nОтветьте цифрой (1/2/3).',
+            { parse_mode: 'Markdown' }
+        );
+        return;
+    }
+
     // Default fallback
-    bot.sendMessage(chatId, `🤔 Я мог не совсем правильно понять сообщение.\n\n${buildHelpMessage()}`);
+    bot.sendMessage(chatId, `🤔 Не понял, что именно сделать.\n\n${buildHelpMessage()}`);
 };
 
 // Helper function to ensure user document exists
@@ -1360,6 +1593,7 @@ const ensureUserExists = async (chatId) => {
     }
 };
 
+if (RUN_MODE === 'bot') {
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
 
@@ -1790,3 +2024,7 @@ console.log('✅ All systems operational. Bot will stay online.');
 console.log(`✅ Health check: http://localhost:${PORT}/health`);
 console.log(`✅ Telegram Bot: ${bot ? 'Initialized' : 'Not initialized'}`);
 console.log('='.repeat(50));
+} // end RUN_MODE === 'bot'
+
+// Expose NLU helpers for self-tests / tooling
+export { detectIntentV2, extractSlotsV2, detectLanguage, normalizeText };
