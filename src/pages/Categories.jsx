@@ -5,9 +5,11 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useSubscriptions } from '../context/SubscriptionContext';
 import { CategoryModal } from '../components/features/CategoryModal';
+import { useExpenses } from '../context/ExpenseContext';
 
 export default function Categories() {
     const { subscriptions, categories: userCategories, removeSubscription, removeCategory } = useSubscriptions();
+    const { expenses } = useExpenses();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCategory, setEditingCategory] = useState(null);
 
@@ -23,22 +25,26 @@ export default function Categories() {
 
     const categoriesList = uniqueCategories.map(cat => {
         const subsInCat = subscriptions.filter(s => s.category === cat.name);
+        const expensesInCat = expenses.filter(e => e.category === cat.name);
 
-        // Calculate totals per currency for this category
-        const costByCurrency = subsInCat.reduce((acc, s) => {
-            const sym = s.currencySymbol || '₩';
-            acc[sym] = (acc[sym] || 0) + (s.cost || 0);
+        // Calculate totals per currency for this category:
+        // subscriptions use `cost`, expenses use `amount`
+        const costByCurrency = [...subsInCat, ...expensesInCat].reduce((acc, item) => {
+            const sym = item.currencySymbol || '₩';
+            const value = (item.cost != null ? item.cost : item.amount) || 0;
+            acc[sym] = (acc[sym] || 0) + value;
             return acc;
         }, {});
 
         return {
             ...cat,
-            count: subsInCat.length,
+            subsCount: subsInCat.length,
+            expensesCount: expensesInCat.length,
             costByCurrency,
             subs: subsInCat,
             isDefault: cat.name === 'Общие' && cat.id === 'general_default'
         };
-    }).filter(c => c.count > 0 || !c.isDefault); // Show empty user categories, but maybe hide empty default "General" if completely unused? 
+    }).filter(c => (c.subsCount > 0 || c.expensesCount > 0) || !c.isDefault); // hide default if вообще не используется
     // Actually user said "when no category show General". So if user adds categories, General might stay if used. 
 
     const handleAddCategory = () => {
@@ -105,7 +111,10 @@ export default function Categories() {
                                 />
                                 <div>
                                     <h3 className="font-bold text-white text-base">{cat.name}</h3>
-                                    <p className="text-xs text-white/60">{cat.count} подписок</p>
+                                    <p className="text-xs text-white/60">
+                                        {cat.subsCount} подписок
+                                        {cat.expensesCount > 0 && ` · ${cat.expensesCount} расходов`}
+                                    </p>
                                 </div>
                             </div>
 
