@@ -85,7 +85,8 @@ export default function AdminDashboard() {
                         >
                             <ArrowLeft className="w-5 h-5 text-white" />
                         </button>
-                        <h1 className="text-xl font-bold text-white">🛡️ Админ-панель</h1>
+                        {/* Заголовок админ-панели без иконки-щита, используем более нейтральный символ */}
+                        <h1 className="text-xl font-bold text-white">Админ-панель</h1>
                     </div>
                     <button
                         onClick={refreshStats}
