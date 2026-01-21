@@ -335,3 +335,155 @@ export function validateAndSanitizeExpense(data) {
         data: sanitized
     };
 }
+
+/**
+ * Validates income data (one-time receive)
+ * @param {Object} data - Income data to validate
+ * @returns {{valid: boolean, errors: string[]}}
+ */
+export function validateIncome(data) {
+    const errors = [];
+
+    // Validate title / name
+    if (!data.title || typeof data.title !== 'string') {
+        errors.push('Название дохода обязательно');
+    } else {
+        const title = data.title.trim();
+        if (title.length === 0) {
+            errors.push('Название дохода не может быть пустым');
+        } else if (title.length > 100) {
+            errors.push('Название дохода слишком длинное (максимум 100 символов)');
+        } else if (title.length < 2) {
+            errors.push('Название дохода слишком короткое (минимум 2 символа)');
+        }
+        if (/<script|javascript:|onerror=|onload=/i.test(title)) {
+            errors.push('Название содержит недопустимые символы');
+        }
+    }
+
+    // Validate amount
+    if (data.amount === undefined || data.amount === null || data.amount === '') {
+        errors.push('Сумма обязательна');
+    } else {
+        const amount = typeof data.amount === 'string' ? parseFloat(data.amount) : Number(data.amount);
+        if (isNaN(amount)) {
+            errors.push('Сумма должна быть числом');
+        } else if (amount < 0) {
+            errors.push('Сумма не может быть отрицательной');
+        } else if (amount > 1000000000) {
+            errors.push('Сумма слишком большая (максимум 1,000,000,000)');
+        } else if (!isFinite(amount)) {
+            errors.push('Сумма должна быть конечным числом');
+        }
+    }
+
+    // Validate currency
+    const validCurrencies = ['RUB', 'USD', 'WON', 'KZT'];
+    if (data.currency && !validCurrencies.includes(data.currency)) {
+        errors.push('Недопустимая валюта');
+    }
+
+    // Validate date (receivedAt)
+    if (!data.receivedAt) {
+        errors.push('Дата обязательна');
+    } else {
+        const date = new Date(data.receivedAt);
+        if (isNaN(date.getTime())) {
+            errors.push('Некорректная дата');
+        } else {
+            const now = new Date();
+            const maxPast = new Date(now.getFullYear() - 10, 0, 1);
+            const maxFuture = new Date(now.getFullYear() + 1, 11, 31);
+
+            if (date < maxPast) {
+                errors.push('Дата слишком далеко в прошлом');
+            } else if (date > maxFuture) {
+                errors.push('Дата слишком далеко в будущем');
+            }
+        }
+    }
+
+    // Validate category
+    if (data.category && typeof data.category === 'string') {
+        if (data.category.length > 50) {
+            errors.push('Название категории слишком длинное (максимум 50 символов)');
+        }
+    }
+
+    // Validate note
+    if (data.note && typeof data.note === 'string') {
+        if (data.note.length > 300) {
+            errors.push('Заметка слишком длинная (максимум 300 символов)');
+        }
+        if (/<script|javascript:|onerror=|onload=/i.test(data.note)) {
+            errors.push('Заметка содержит недопустимые символы');
+        }
+    }
+
+    // Validate color (hex color)
+    if (data.color && typeof data.color === 'string') {
+        if (!/^#[0-9A-Fa-f]{6}$/.test(data.color)) {
+            errors.push('Некорректный формат цвета (должен быть hex, например #a78bfa)');
+        }
+    }
+
+    // Validate icon (short text) + iconUrl
+    if (data.icon && typeof data.icon === 'string') {
+        if (data.icon.length > 5) {
+            errors.push('Иконка слишком длинная');
+        }
+        if (/<script|javascript:|onerror=|onload=/i.test(data.icon)) {
+            errors.push('Иконка содержит недопустимые символы');
+        }
+    }
+    if (data.iconUrl && typeof data.iconUrl === 'string') {
+        if (data.iconUrl.length > 500) {
+            errors.push('Ссылка на иконку слишком длинная');
+        }
+        if (/<script|javascript:|onerror=|onload=/i.test(data.iconUrl)) {
+            errors.push('Ссылка на иконку содержит недопустимые символы');
+        }
+    }
+
+    return {
+        valid: errors.length === 0,
+        errors
+    };
+}
+
+/**
+ * Validates and sanitizes income data
+ * @param {Object} data - Raw income data
+ * @returns {{valid: boolean, errors: string[], data: Object}} Sanitized data
+ */
+export function validateAndSanitizeIncome(data) {
+    const validation = validateIncome(data);
+
+    if (!validation.valid) {
+        return {
+            valid: false,
+            errors: validation.errors,
+            data: null
+        };
+    }
+
+    const sanitized = {
+        ...data,
+        title: sanitizeString(data.title),
+        amount: typeof data.amount === 'string' ? parseFloat(data.amount) : Number(data.amount),
+        currency: data.currency || 'RUB',
+        currencySymbol: data.currencySymbol || '₽',
+        receivedAt: data.receivedAt,
+        category: data.category ? sanitizeString(data.category) : 'Общие',
+        color: data.color || '#a78bfa',
+        note: data.note ? sanitizeString(data.note) : '',
+        icon: data.icon || (data.title ? sanitizeString(data.title)[0]?.toUpperCase() : '?'),
+        iconUrl: data.iconUrl || null
+    };
+
+    return {
+        valid: true,
+        errors: [],
+        data: sanitized
+    };
+}

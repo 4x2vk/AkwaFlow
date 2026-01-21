@@ -20,27 +20,18 @@ export function Layout({ children }) {
             <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-white/5">
                 <div className="max-w-md mx-auto px-4 h-14 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden ring-1 ring-white/10">
+                        <div className="w-28 h-8 flex items-center justify-start overflow-hidden">
                             {logoError ? (
-                                <div className="w-full h-full bg-gradient-to-br from-purple-600 via-pink-500 to-amber-400 rounded-full"></div>
+                                <div className="w-full h-full bg-gradient-to-r from-purple-600 via-pink-500 to-amber-400 rounded"></div>
                             ) : (
                                 <img 
-                                    src="/akwaflow-logo.png" 
+                                    src="/akwaflow-logo-v2.png" 
                                     alt="AkwaFlow" 
-                                    className="w-full h-full object-cover rounded-full"
+                                    className="w-full h-full object-contain"
                                     onError={() => setLogoError(true)}
                                 />
                             )}
                         </div>
-                        <h1 className="text-xl font-bold bg-clip-text text-transparent animate-gradient bg-[length:200%_auto]" style={{
-                            backgroundImage: 'linear-gradient(90deg, #8b5cf6 0%, #a78bfa 25%, #ec4899 50%, #f59e0b 75%, #8b5cf6 100%)',
-                            WebkitBackgroundClip: 'text',
-                            WebkitTextFillColor: 'transparent',
-                            backgroundClip: 'text',
-                            backgroundSize: '200% auto'
-                        }}>
-                            AkwaFlow
-                        </h1>
                     </div>
                     <div className="flex items-center gap-2">
                         {devMode && (

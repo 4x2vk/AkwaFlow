@@ -6,7 +6,7 @@ import App from './App.jsx'
 import { mockTelegramWebApp, isDevMode } from './lib/devMode.js'
 
 // Initialize dev mode mock if needed
-if (import.meta.env.DEV || isDevMode()) {
+if (isDevMode()) {
     mockTelegramWebApp();
 }
 
