@@ -695,48 +695,44 @@ const extractTitleGeneric = (rawText) => {
 // "категория Купанг", "category Food", "카테고리 쇼핑"
 const extractCategory = (rawText, lang) => {
     const text = normalizeText(rawText);
-    const lower = text.toLowerCase();
-
-    // Simple patterns per language - match anywhere, prefer last match
-    // Capture everything after "категория" until end of string, then clean it
+    // NOTE: JS \\b is ASCII-only and breaks on Cyrillic.
+    // Use Unicode-aware boundaries instead: (^|[^\\p{L}\\p{N}_]) ... (?:$|[^\\p{L}\\p{N}_])
     const patterns = [
-        // RU
-        /\bкатегор(?:ия|ии|ию|ией)?\s+(.+?)(?:\s*$)/gi,
-        // EN
-        /\bcategory\s+(.+?)(?:\s*$)/gi,
-        // Short RU alias
-        /\bкат\s+(.+?)(?:\s*$)/gi,
-        // KO
-        /(카테고리|분류)\s+(.+?)(?:\s*$)/gi
+        // RU: категория <name>
+        { re: /(^|[^\p{L}\p{N}_])категор(?:ия|ии|ию|ией)?\s+([^\d.,;]+?)(?=$|[^\p{L}\p{N}_])/giu, group: 2 },
+        // RU short: кат <name>
+        { re: /(^|[^\p{L}\p{N}_])кат\s+([^\d.,;]+?)(?=$|[^\p{L}\p{N}_])/giu, group: 2 },
+        // EN: category <name>
+        { re: /\bcategory\s+([^\d.,;]+?)(?=$|\s)/giu, group: 1 },
+        // KO: 카테고리/분류 <name>
+        { re: /(카테고리|분류)\s+([^\d.,;]+?)(?=$|\s)/giu, group: 2 }
     ];
 
     let matchText = null;
-    for (const re of patterns) {
+    for (const { re, group } of patterns) {
         const matches = [...text.matchAll(re)];
         if (matches.length > 0) {
-            // Take the last match (usually at the end of phrase)
             const lastMatch = matches[matches.length - 1];
-            // Last capturing group is the value
-            matchText = lastMatch[lastMatch.length - 1];
+            matchText = lastMatch[group];
         }
     }
 
     if (!matchText) return null;
 
     let cat = matchText.trim();
-    // Remove stop words (dates, currencies, numbers) from the end
+    
+    // Remove stop words (dates, currencies, numbers) that might have been captured
     const stopWords = /\s+(сегодня|вчера|завтра|послезавтра|today|yesterday|tomorrow|오늘|어제|내일|모레|\d+(?:[.,]\d+)?|[₽₩₸$€]|won|krw|rub|usd|kzt|eur|руб|дол|тен|тг|вон|원|만원|천원).*$/i;
     cat = cat.replace(stopWords, '');
+    
     // Remove extra spaces
     cat = cat.replace(/\s+/g, ' ').trim();
+    
+    // If category became empty after cleaning, return null
+    if (!cat || cat.length === 0) return null;
 
-    // Normalize case: first letter upper, rest as is
-    if (cat.length === 0) return null;
-
-    // For non-latin, just trim; for latin, capitalize first
-    if (/^[a-z]/i.test(cat[0])) {
-        cat = cat[0].toUpperCase() + cat.slice(1);
-    }
+    // Capitalize first character when possible (works for Cyrillic/Latin)
+    if (cat.length >= 1) cat = cat[0].toUpperCase() + cat.slice(1);
 
     return cat;
 };
@@ -999,6 +995,9 @@ const processTextCommand = async (chatId, text) => {
             try {
                 const userDocRef = db.collection('users').doc(String(chatId));
 
+                // Ensure category exists (create if needed)
+                const categoryName = baseSlots.category ? await ensureCategoryForUser(chatId, baseSlots.category) : null;
+
                 if (looksExpense) {
                     const expenseData = {
                         title,
@@ -1006,7 +1005,7 @@ const processTextCommand = async (chatId, text) => {
                         currency: baseSlots.currencyCode || 'WON',
                         currencySymbol: baseSlots.currencySymbol || '₩',
                         spentAt: baseSlots.transaction?.at,
-                        category: baseSlots.category || 'Общие',
+                        category: categoryName || 'Общие',
                         color: '#a78bfa',
                         note: '',
                         icon: String(title || '?')[0].toUpperCase(),
@@ -1027,7 +1026,7 @@ const processTextCommand = async (chatId, text) => {
                         currency: baseSlots.currencyCode || 'WON',
                         currencySymbol: baseSlots.currencySymbol || '₩',
                         receivedAt: baseSlots.transaction?.at,
-                        category: baseSlots.category || 'Общие',
+                        category: categoryName || 'Общие',
                         color: '#22C55E',
                         note: '',
                         icon: String(title || '?')[0].toUpperCase(),
@@ -1049,7 +1048,7 @@ const processTextCommand = async (chatId, text) => {
                     billingPeriod: baseSlots.billingPeriod || 'monthly',
                     cycle: baseSlots.subscription?.cycle || 'Каждый 1 числа',
                     nextPaymentDate: baseSlots.subscription?.nextPaymentDate,
-                    category: baseSlots.category || 'Общие',
+                    category: categoryName || 'Общие',
                     color: '#a78bfa',
                     icon: String(title || '?')[0].toUpperCase(),
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -1120,6 +1119,12 @@ const processTextCommand = async (chatId, text) => {
                 try {
                     const billingPeriod = detectBillingPeriod(normalized);
                     const userDocRef = db.collection('users').doc(String(chatId));
+                    
+                    // Try to extract category from the original text if available
+                    const originalText = current.originalText || normalized;
+                    const categoryFromText = extractCategory(originalText, detectLanguage(originalText));
+                    const categoryName = categoryFromText ? await ensureCategoryForUser(chatId, categoryFromText) : null;
+                    
                     const subscriptionData = {
                         name: current.name,
                         cost: current.cost,
@@ -1128,7 +1133,7 @@ const processTextCommand = async (chatId, text) => {
                         billingPeriod,
                         cycle: current.cycle || 'Каждый 1 числа',
                         nextPaymentDate: current.nextPaymentDate,
-                        category: 'Общие',
+                        category: categoryName || 'Общие',
                         color: '#a78bfa',
                         icon: String(current.name || '?')[0].toUpperCase(),
                         createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -1361,13 +1366,17 @@ const processTextCommand = async (chatId, text) => {
 
         try {
             const userDocRef = db.collection('users').doc(String(chatId));
+            
+            // Ensure category exists (create if needed)
+            const categoryName = slots.category ? await ensureCategoryForUser(chatId, slots.category) : null;
+            
             const expenseData = {
                 title,
                 amount,
                 currency: slots.currencyCode || 'WON',
                 currencySymbol: slots.currencySymbol || '₩',
                 spentAt,
-                category: slots.category || 'Общие',
+                category: categoryName || 'Общие',
                 color: '#a78bfa',
                 note: '',
                 icon: String(title || '?')[0].toUpperCase(),
@@ -1412,13 +1421,17 @@ const processTextCommand = async (chatId, text) => {
 
         try {
             const userDocRef = db.collection('users').doc(String(chatId));
+            
+            // Ensure category exists (create if needed)
+            const categoryName = slots.category ? await ensureCategoryForUser(chatId, slots.category) : null;
+            
             const incomeData = {
                 title,
                 amount,
                 currency: slots.currencyCode || 'WON',
                 currencySymbol: slots.currencySymbol || '₩',
                 receivedAt,
-                category: slots.category || 'Общие',
+                category: categoryName || 'Общие',
                 color: '#22C55E',
                 note: '',
                 icon: String(title || '?')[0].toUpperCase(),
@@ -1468,6 +1481,10 @@ const processTextCommand = async (chatId, text) => {
 
         try {
             const userDocRef = db.collection('users').doc(String(chatId));
+            
+            // Ensure category exists (create if needed)
+            const categoryName = slots.category ? await ensureCategoryForUser(chatId, slots.category) : null;
+            
             const subscriptionData = {
                 name,
                 cost,
@@ -1478,7 +1495,7 @@ const processTextCommand = async (chatId, text) => {
                     ? `Ежегодно${date ? `, ${new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}` : ''}`
                     : cycle,
                 nextPaymentDate: date,
-                category: slots.category || 'Общие',
+                category: categoryName || 'Общие',
                 color: '#a78bfa',
                 icon: name[0].toUpperCase(),
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -1493,7 +1510,7 @@ const processTextCommand = async (chatId, text) => {
                 return;
             }
 
-            console.log(`[BOT] ADD user=${chatId} name="${name}" cost=${cost} ${code}`);
+            console.log(`[BOT] ADD user=${chatId} name="${name}" cost=${cost} ${code} category="${categoryName || 'Общие'}"`);
             await userDocRef.collection('subscriptions').add(subscriptionData);
 
             const dateStr = date ? new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—';
@@ -1717,6 +1734,54 @@ const ensureUserExists = async (chatId) => {
         }
     } catch (error) {
         console.error(`[BOT] Error ensuring user exists for ${chatId}:`, error);
+    }
+};
+
+// Ensure category exists for user, create if not exists
+// Returns the category name (normalized) or null if categoryName is empty/null
+const ensureCategoryForUser = async (chatId, categoryName) => {
+    if (!categoryName || categoryName.trim().length === 0) {
+        return null;
+    }
+
+    const catName = categoryName.trim();
+    const catNameLower = catName.toLowerCase();
+
+    try {
+        const userDocRef = db.collection('users').doc(String(chatId));
+        const categoriesRef = userDocRef.collection('categories');
+
+        // Check if category already exists (case-insensitive)
+        // Get all categories and check case-insensitively
+        const snapshot = await categoriesRef.get();
+        const existingCat = snapshot.docs.find(doc => {
+            const data = doc.data();
+            return data.name && data.name.toLowerCase() === catNameLower;
+        });
+        
+        if (existingCat) {
+            // Category exists, return its name (preserve original case)
+            const existingCatData = existingCat.data();
+            console.log(`[BOT] Category "${existingCatData.name}" already exists for user ${chatId}`);
+            return existingCatData.name;
+        }
+
+        // Category doesn't exist, create it
+        const defaultColors = ['#a78bfa', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', '#EC4899', '#06B6D4', '#FBBF24', '#6366F1', '#10B981'];
+        const colorIndex = catNameLower.charCodeAt(0) % defaultColors.length;
+        const categoryData = {
+            name: catName,
+            color: defaultColors[colorIndex],
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        await categoriesRef.add(categoryData);
+        console.log(`[BOT] Created category "${catName}" for user ${chatId}`);
+        return catName;
+    } catch (error) {
+        console.error(`[BOT] Error ensuring category "${catName}" for user ${chatId}:`, error);
+        // Return category name anyway, so operation can continue
+        return catName;
     }
 };
 
