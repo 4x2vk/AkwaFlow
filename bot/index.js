@@ -618,7 +618,7 @@ const extractTitleGeneric = (rawText) => {
     const out = [];
 
     for (let i = 0; i < tokens.length; i++) {
-        const tok = tokens[i];
+        let tok = tokens[i];
         
         // Skip category label tokens
         if (stop.has(tok) && (tok === 'категория' || tok === 'category' || tok === '카테고리' || tok === '분류' || tok === 'кат')) {
