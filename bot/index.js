@@ -390,32 +390,52 @@ const setPending = (chatId, pending) => {
     pendingByChat.set(String(chatId), { ...pending, createdAt: Date.now() });
 };
 
-// Date Helper - Parse date from text like "12 числа" or "12"
+// Date Helper - Parse date from text like "12 числа" or "31число"
 const parseDate = (text) => {
-    // Try to find date pattern: "12 числа", "12 число", "12-го", "12-е", or just "12"
-    const dateMatch = text.match(/(\d{1,2})(?:\s*(?:числа|число|го|е|th))?/i);
-    if (dateMatch) {
-        const day = parseInt(dateMatch[1], 10);
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    // 1) Явный паттерн "12 числа/число/го/е/th" — берём ПОСЛЕДНЕЕ вхождение (обычно день в конце)
+    const explicitMatches = [...text.matchAll(/(\d{1,2})\s*(?:числа|число|го|е|th)\b/gi)];
+    if (explicitMatches.length > 0) {
+        const last = explicitMatches[explicitMatches.length - 1];
+        const day = parseInt(last[1], 10);
         if (day >= 1 && day <= 31) {
-            const now = new Date();
             const year = now.getFullYear();
             const month = now.getMonth();
-            
-            // Create date for this month, or next month if day has passed
             let paymentDate = new Date(year, month, day);
             if (paymentDate < now) {
-                // If date has passed this month, set for next month
                 paymentDate = new Date(year, month + 1, day);
             }
-            
             return {
                 date: paymentDate.toISOString(),
                 cycle: `Каждый ${day} числа`
             };
         }
     }
-    // Default: next month, 1st day
-    const now = new Date();
+
+    // 2) Любое "1–2 цифры как отдельный день" — игнорируем длинные суммы (>=100), берём ПОСЛЕДНЮЮ
+    const genericMatches = [...text.matchAll(/(^|[^\d])(\d{1,2})(?!\d)/g)];
+    if (genericMatches.length > 0) {
+        const candidates = genericMatches
+            .map(m => parseInt(m[2], 10))
+            .filter(d => d >= 1 && d <= 31);
+        if (candidates.length > 0) {
+            const day = candidates[candidates.length - 1];
+            const year = now.getFullYear();
+            const month = now.getMonth();
+            let paymentDate = new Date(year, month, day);
+            if (paymentDate < now) {
+                paymentDate = new Date(year, month + 1, day);
+            }
+            return {
+                date: paymentDate.toISOString(),
+                cycle: `Каждый ${day} числа`
+            };
+        }
+    }
+
+    // 3) По умолчанию — следующий месяц, 1 число
     const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     return {
         date: nextMonth.toISOString(),
