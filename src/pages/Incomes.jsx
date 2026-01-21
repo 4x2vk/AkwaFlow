@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Calendar, TrendingUp, Banknote } from 'lucide-react';
+import { Plus, Calendar, TrendingUp, Coins } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -52,13 +52,13 @@ export default function Incomes() {
                         <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-green-500/15"></div>
                         <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-green-500/10"></div>
                         <div className="absolute top-2 right-2 opacity-20">
-                            <Banknote size={28} className="text-green-400" />
+                            <Coins size={28} className="text-green-400" />
                         </div>
                         <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">этот месяц</span>
                         <div className="flex flex-col gap-1 relative z-10 mt-1">
                             {Object.entries(totalsThisMonth).length > 0 ? (
                                 Object.entries(totalsThisMonth).map(([curr, amount]) => (
-                                    <div key={curr} className="font-bold text-lg text-green-400 whitespace-nowrap">
+                                    <div key={curr} className="font-bold text-green-400 whitespace-nowrap truncate max-w-full text-[clamp(0.9rem,2.6vw,1.125rem)]">
                                         {curr}{Number(amount || 0).toLocaleString()}
                                     </div>
                                 ))
@@ -90,7 +90,7 @@ export default function Incomes() {
                         <div className="flex flex-col gap-1 relative z-10 mt-1">
                             {Object.entries(totalsPrevMonth).length > 0 ? (
                                 Object.entries(totalsPrevMonth).map(([curr, amount]) => (
-                                    <div key={curr} className="font-bold text-lg text-white whitespace-nowrap">
+                                    <div key={curr} className="font-bold text-white whitespace-nowrap truncate max-w-full text-[clamp(0.9rem,2.6vw,1.125rem)]">
                                         {curr}{Number(amount || 0).toLocaleString()}
                                     </div>
                                 ))

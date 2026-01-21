@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
-import { CreditCard, Wallet, TrendingUp } from 'lucide-react';
+import { CreditCard, Wallet, TrendingUp, Coins } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
 import { useSubscriptions } from '../context/SubscriptionContext';
@@ -343,7 +343,7 @@ export default function Analytics() {
                         <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-green-500/15"></div>
                         <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-green-500/10"></div>
                         <div className="absolute top-2 right-2 opacity-20">
-                            <TrendingUp size={28} className="text-green-400" />
+                            <Coins size={28} className="text-green-400" />
                         </div>
                         <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">доходы/мес</span>
                         <div className="flex flex-col gap-1 relative z-10 mt-1">

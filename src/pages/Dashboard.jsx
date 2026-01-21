@@ -109,7 +109,7 @@ export default function Dashboard() {
                         <div className="flex flex-col gap-1 relative z-10 mt-1">
                             {Object.entries(totalsByCurrency).length > 0 ? (
                                 Object.entries(totalsByCurrency).map(([curr, amount]) => (
-                                    <div key={curr} className="font-bold text-lg text-purple-400 whitespace-nowrap">
+                                    <div key={curr} className="font-bold text-purple-400 whitespace-nowrap truncate max-w-full text-[clamp(0.9rem,2.6vw,1.125rem)]">
                                         {curr}{amount.toLocaleString()}
                                     </div>
                                 ))

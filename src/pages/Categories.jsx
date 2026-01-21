@@ -6,10 +6,12 @@ import { Button } from '../components/ui/Button';
 import { useSubscriptions } from '../context/SubscriptionContext';
 import { CategoryModal } from '../components/features/CategoryModal';
 import { useExpenses } from '../context/ExpenseContext';
+import { useIncomes } from '../context/IncomeContext';
 
 export default function Categories() {
     const { subscriptions, categories: userCategories, removeSubscription, removeCategory } = useSubscriptions();
     const { expenses } = useExpenses();
+    const { incomes } = useIncomes();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCategory, setEditingCategory] = useState(null);
 
@@ -26,12 +28,22 @@ export default function Categories() {
     const categoriesList = uniqueCategories.map(cat => {
         const subsInCat = subscriptions.filter(s => s.category === cat.name);
         const expensesInCat = expenses.filter(e => e.category === cat.name);
+        const incomesInCat = incomes.filter(i => i.category === cat.name);
 
-        // Calculate totals per currency for this category:
-        // subscriptions use `cost`, expenses use `amount`
-        const costByCurrency = [...subsInCat, ...expensesInCat].reduce((acc, item) => {
+        // Totals per currency:
+        // - subscriptions: `cost`
+        // - expenses: `amount` (outgoing)
+        // - incomes: `amount` (incoming)
+        const spendByCurrency = [...subsInCat, ...expensesInCat].reduce((acc, item) => {
             const sym = item.currencySymbol || '₩';
             const value = (item.cost != null ? item.cost : item.amount) || 0;
+            acc[sym] = (acc[sym] || 0) + value;
+            return acc;
+        }, {});
+
+        const incomeByCurrency = incomesInCat.reduce((acc, item) => {
+            const sym = item.currencySymbol || '₩';
+            const value = Number(item.amount || 0);
             acc[sym] = (acc[sym] || 0) + value;
             return acc;
         }, {});
@@ -40,11 +52,13 @@ export default function Categories() {
             ...cat,
             subsCount: subsInCat.length,
             expensesCount: expensesInCat.length,
-            costByCurrency,
+            incomesCount: incomesInCat.length,
+            spendByCurrency,
+            incomeByCurrency,
             subs: subsInCat,
             isDefault: cat.name === 'Общие' && cat.id === 'general_default'
         };
-    }).filter(c => (c.subsCount > 0 || c.expensesCount > 0) || !c.isDefault); // hide default if вообще не используется
+    }).filter(c => (c.subsCount > 0 || c.expensesCount > 0 || c.incomesCount > 0) || !c.isDefault); // hide default if вообще не используется
     // Actually user said "when no category show General". So if user adds categories, General might stay if used. 
 
     const handleAddCategory = () => {
@@ -114,20 +128,32 @@ export default function Categories() {
                                     <p className="text-xs text-white/60">
                                         {cat.subsCount} подписок
                                         {cat.expensesCount > 0 && ` · ${cat.expensesCount} расходов`}
+                                        {cat.incomesCount > 0 && ` · ${cat.incomesCount} доходов`}
                                     </p>
                                 </div>
                             </div>
 
                             <div className="flex items-center gap-3 relative z-10">
-                                <div className="text-right flex flex-col items-end">
-                                    {Object.entries(cat.costByCurrency).length > 0 ? (
-                                        Object.entries(cat.costByCurrency).map(([sym, cost]) => (
-                                            <div key={sym} className="font-bold text-white text-base">
-                                                {sym}{cost.toLocaleString()}
+                                <div className="text-right flex flex-col items-end min-w-0">
+                                    {/* spending (subs+expenses) */}
+                                    {Object.entries(cat.spendByCurrency).length > 0 ? (
+                                        Object.entries(cat.spendByCurrency).map(([sym, cost]) => (
+                                            <div key={`spend-${sym}`} className="font-bold text-white text-base whitespace-nowrap truncate max-w-[9rem]">
+                                                {sym}{Number(cost || 0).toLocaleString()}
                                             </div>
                                         ))
                                     ) : (
                                         <div className="font-bold text-white text-base">₩0</div>
+                                    )}
+                                    {/* incomes */}
+                                    {Object.entries(cat.incomeByCurrency).length > 0 && (
+                                        <div className="mt-1 flex flex-col items-end min-w-0">
+                                            {Object.entries(cat.incomeByCurrency).map(([sym, inc]) => (
+                                                <div key={`inc-${sym}`} className="font-semibold text-green-400 text-xs whitespace-nowrap truncate max-w-[9rem]">
+                                                    +{sym}{Number(inc || 0).toLocaleString()}
+                                                </div>
+                                            ))}
+                                        </div>
                                     )}
                                 </div>
                                 {!cat.isDefault && (
