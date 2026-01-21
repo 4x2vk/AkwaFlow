@@ -620,9 +620,28 @@ const extractTitleGeneric = (rawText) => {
     for (let i = 0; i < tokens.length; i++) {
         let tok = tokens[i];
         
-        // Skip category label tokens
+        // Skip category label tokens and their values
         if (stop.has(tok) && (tok === 'категория' || tok === 'category' || tok === '카테고리' || tok === '분류' || tok === 'кат')) {
-            // Skip the category label and the next token(s) that match the category value
+            // Skip the category label
+            // Then skip the next token(s) that match the category value
+            if (categoryTokens.length > 0 && i + 1 < tokens.length) {
+                // Check if next tokens match category value
+                let matchesCategory = false;
+                for (let j = 0; j < categoryTokens.length && i + 1 + j < tokens.length; j++) {
+                    if (tokens[i + 1 + j] === categoryTokens[j]) {
+                        if (j === categoryTokens.length - 1) {
+                            matchesCategory = true;
+                            // Skip category label + all category value tokens
+                            i += j + 1;
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                if (matchesCategory) continue;
+            }
+            // If no category value found, just skip the label
             continue;
         }
         
@@ -679,15 +698,16 @@ const extractCategory = (rawText, lang) => {
     const lower = text.toLowerCase();
 
     // Simple patterns per language - match anywhere, prefer last match
+    // Capture everything after "категория" until end of string, then clean it
     const patterns = [
         // RU
-        /\bкатегор(?:ия|ии|ию|ией)?\s+([^\d.,;]+?)(?:\s|$)/gi,
+        /\bкатегор(?:ия|ии|ию|ией)?\s+(.+?)(?:\s*$)/gi,
         // EN
-        /\bcategory\s+([^\d.,;]+?)(?:\s|$)/gi,
+        /\bcategory\s+(.+?)(?:\s*$)/gi,
         // Short RU alias
-        /\bкат\s+([^\d.,;]+?)(?:\s|$)/gi,
+        /\bкат\s+(.+?)(?:\s*$)/gi,
         // KO
-        /(카테고리|분류)\s+([^\d.,;]+?)(?:\s|$)/gi
+        /(카테고리|분류)\s+(.+?)(?:\s*$)/gi
     ];
 
     let matchText = null;
@@ -704,8 +724,11 @@ const extractCategory = (rawText, lang) => {
     if (!matchText) return null;
 
     let cat = matchText.trim();
-    // Remove extra spaces and trailing service words
-    cat = cat.replace(/\s+/g, ' ');
+    // Remove stop words (dates, currencies, numbers) from the end
+    const stopWords = /\s+(сегодня|вчера|завтра|послезавтра|today|yesterday|tomorrow|오늘|어제|내일|모레|\d+(?:[.,]\d+)?|[₽₩₸$€]|won|krw|rub|usd|kzt|eur|руб|дол|тен|тг|вон|원|만원|천원).*$/i;
+    cat = cat.replace(stopWords, '');
+    // Remove extra spaces
+    cat = cat.replace(/\s+/g, ' ').trim();
 
     // Normalize case: first letter upper, rest as is
     if (cat.length === 0) return null;
@@ -729,8 +752,9 @@ const extractSlotsV2 = (rawText, intentInfo) => {
     const billingPeriod = detectBillingPeriod(normalized);
     const subscriptionDate = parseDateEnhanced(normalized);
     const txDate = parseTransactionDate(normalized);
-    const title = extractTitleGeneric(normalized);
+    // Extract category BEFORE extracting title, so title can remove category words
     const category = extractCategory(rawText, lang);
+    const title = extractTitleGeneric(rawText);
 
     return {
         lang,
@@ -915,7 +939,7 @@ const processTextCommand = async (chatId, text) => {
     const normalized = normalizeText(rawText);
     const intentInfo = detectIntentV2(normalized);
     const intent = intentInfo.intent;
-    const slots = extractSlotsV2(normalized, intentInfo);
+    const slots = extractSlotsV2(rawText, intentInfo);
 
     // Ensure user document exists when they interact
     await ensureUserExists(chatId);
@@ -1656,7 +1680,7 @@ const processTextCommand = async (chatId, text) => {
         setPending(chatId, {
             type: 'clarify_add_type',
             step: 'choose_type',
-            data: { rawText: normalized }
+            data: { rawText: rawText }
         });
 
         bot.sendMessage(
