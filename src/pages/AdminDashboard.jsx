@@ -17,17 +17,23 @@ export default function AdminDashboard() {
         
         const last30Days = [];
         const now = new Date();
+        let usersRunning = 0;
+        let subsRunning = 0;
         for (let i = 29; i >= 0; i--) {
             const date = new Date(now);
             date.setDate(date.getDate() - i);
             const dateStr = date.toISOString().split('T')[0];
             // Более короткий формат даты для лучшей читаемости
             const dayName = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+
+            // Make chart “like a currency chart”: keep last value (cumulative)
+            usersRunning += Number(adminStats.usersByDay[dateStr] || 0);
+            subsRunning += Number(adminStats.subscriptionsByDay[dateStr] || 0);
             
             last30Days.push({
                 date: dayName,
-                users: adminStats.usersByDay[dateStr] || 0,
-                subscriptions: adminStats.subscriptionsByDay[dateStr] || 0
+                users: usersRunning,
+                subscriptions: subsRunning
             });
         }
         return last30Days;
@@ -216,7 +222,7 @@ export default function AdminDashboard() {
                     {/* Users and Subscriptions Over Time */}
                     <Card className="relative overflow-hidden bg-black/50 border border-white/10 backdrop-blur-sm p-4 rounded-2xl">
                         <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/8"></div>
-                        <h3 className="text-sm font-bold text-white mb-4 relative z-10">Новые пользователи и подписки (30 дней)</h3>
+                        <h3 className="text-sm font-bold text-white mb-4 relative z-10">Пользователи и подписки (30 дней)</h3>
                         <div className="h-64 w-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart 

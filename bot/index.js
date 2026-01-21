@@ -390,6 +390,37 @@ const extractCost = (rawText) => {
     return Number.isFinite(n) ? n : null;
 };
 
+// For subscriptions it is common to сначала назвать день, потом сумму:
+// «Добавь подписку KT 15 числа 12000 рублей»
+// Здесь первая цифра = день, а реальная стоимость = последняя цифра рядом с валютой.
+const extractSubscriptionCost = (rawText) => {
+    const text = normalizeText(rawText);
+    const numberRegex = /(\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)/g;
+    const currencyRegex = /(₽|₩|₸|\$|\b(rub|usd|kzt|krw|won|руб(ль|ля|лей)?|доллар(а|ов)?|бакс(ов)?|тенге|тенг|тг|вон(а|ы)?)\b)/i;
+
+    const matches = [];
+    let m;
+    while ((m = numberRegex.exec(text)) !== null) {
+        matches.push({ value: m[1], index: m.index });
+    }
+    if (!matches.length) return null;
+
+    // Ищем число, возле которого есть валюта (чаще всего это и есть стоимость)
+    for (let i = matches.length - 1; i >= 0; i--) {
+        const { value, index } = matches[i];
+        const windowAfter = text.slice(index + value.length, index + value.length + 12);
+        if (currencyRegex.test(windowAfter)) {
+            const n = parseFloat(value.replace(/\s|\u00A0/g, '').replace(',', '.'));
+            return Number.isFinite(n) ? n : null;
+        }
+    }
+
+    // fallback: берём последнее число как стоимость
+    const last = matches[matches.length - 1].value;
+    const n = parseFloat(last.replace(/\s|\u00A0/g, '').replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+};
+
 // Function to download audio file from Telegram
 const downloadAudioFile = async (fileId) => {
     try {
@@ -1067,7 +1098,7 @@ const processTextCommand = async (chatId, text) => {
 
     // ADD (robust parsing, supports different word order)
     if (intent === 'add') {
-        const cost = extractCost(normalized);
+        const cost = extractSubscriptionCost(normalized);
         const { code, symbol } = detectCurrency(normalized);
         const billingPeriod = detectBillingPeriod(normalized);
         const { date, cycle } = parseDateEnhanced(normalized);

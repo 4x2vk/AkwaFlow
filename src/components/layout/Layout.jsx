@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Banknote, Shield } from 'lucide-react';
+import { Banknote, Settings } from 'lucide-react';
 import { BottomNav } from './BottomNav';
 import { useAuth } from '../../context/AuthContext';
 import { useAdmin } from '../../context/AdminContext';
@@ -45,7 +45,7 @@ export function Layout({ children }) {
                                 className="p-2 hover:bg-surface-hover rounded-lg transition-colors"
                                 title="Админ-панель"
                             >
-                                <Shield className="w-5 h-5 text-primary" />
+                                <Settings className="w-5 h-5 text-primary" />
                             </Link>
                         )}
                     </div>

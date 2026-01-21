@@ -1,7 +1,7 @@
 {
   "name": "akwaflow",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "scripts": {
     "predev": "node scripts/generate-build-info.mjs",
