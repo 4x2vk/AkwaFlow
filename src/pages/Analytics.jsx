@@ -5,10 +5,12 @@ import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
 import { useSubscriptions } from '../context/SubscriptionContext';
 import { useExpenses } from '../context/ExpenseContext';
+import { useIncomes } from '../context/IncomeContext';
 
 export default function Analytics() {
     const { subscriptions } = useSubscriptions();
     const { expenses } = useExpenses();
+    const { incomes } = useIncomes();
 
     const now = useMemo(() => {
         const d = new Date();
@@ -65,13 +67,37 @@ export default function Analytics() {
         }, {});
     }, [expenses, currentMonth, currentYear]);
 
-    const totalThisMonthByCurrency = useMemo(() => {
+    const incomeThisMonthByCurrency = useMemo(() => {
+        return incomes.reduce((acc, e) => {
+            if (!e?.receivedAt) return acc;
+            const d = new Date(e.receivedAt);
+            if (isNaN(d.getTime())) return acc;
+            if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return acc;
+            const sym = e.currencySymbol || '₩';
+            acc[sym] = (acc[sym] || 0) + Number(e.amount || 0);
+            return acc;
+        }, {});
+    }, [currentMonth, currentYear, incomes]);
+
+    const expensePlusSubsThisMonthByCurrency = useMemo(() => {
         const combined = { ...expenseThisMonthByCurrency };
         Object.entries(subscriptionMonthlyByCurrency).forEach(([sym, amount]) => {
             combined[sym] = (combined[sym] || 0) + Number(amount || 0);
         });
         return combined;
     }, [expenseThisMonthByCurrency, subscriptionMonthlyByCurrency]);
+
+    const netThisMonthByCurrency = useMemo(() => {
+        const allSyms = new Set([
+            ...Object.keys(incomeThisMonthByCurrency),
+            ...Object.keys(expensePlusSubsThisMonthByCurrency)
+        ]);
+        const out = {};
+        allSyms.forEach((sym) => {
+            out[sym] = Number(incomeThisMonthByCurrency[sym] || 0) - Number(expensePlusSubsThisMonthByCurrency[sym] || 0);
+        });
+        return out;
+    }, [expensePlusSubsThisMonthByCurrency, incomeThisMonthByCurrency]);
 
     const expenseThisYearByCurrency = useMemo(() => {
         return expenses.reduce((acc, e) => {
@@ -86,11 +112,24 @@ export default function Analytics() {
         }, {});
     }, [currentMonth, currentYear, expenses]);
 
+    const incomeThisYearByCurrency = useMemo(() => {
+        return incomes.reduce((acc, e) => {
+            if (!e?.receivedAt) return acc;
+            const d = new Date(e.receivedAt);
+            if (isNaN(d.getTime())) return acc;
+            if (d.getFullYear() !== currentYear) return acc;
+            if (d.getMonth() > currentMonth) return acc; // don't count future months
+            const sym = e.currencySymbol || '₩';
+            acc[sym] = (acc[sym] || 0) + Number(e.amount || 0);
+            return acc;
+        }, {});
+    }, [currentMonth, currentYear, incomes]);
+
     const subscriptionYearlyByCurrency = useMemo(() => {
         return toYearlyByCurrency(subscriptionMonthlyByCurrency);
     }, [subscriptionMonthlyByCurrency]);
 
-    const totalThisYearByCurrency = useMemo(() => {
+    const expensePlusSubsThisYearByCurrency = useMemo(() => {
         const combined = { ...expenseThisYearByCurrency };
         Object.entries(subscriptionYearlyByCurrency).forEach(([sym, amount]) => {
             combined[sym] = (combined[sym] || 0) + Number(amount || 0);
@@ -98,12 +137,26 @@ export default function Analytics() {
         return combined;
     }, [expenseThisYearByCurrency, subscriptionYearlyByCurrency]);
 
+    const netThisYearByCurrency = useMemo(() => {
+        const allSyms = new Set([
+            ...Object.keys(incomeThisYearByCurrency),
+            ...Object.keys(expensePlusSubsThisYearByCurrency)
+        ]);
+        const out = {};
+        allSyms.forEach((sym) => {
+            out[sym] = Number(incomeThisYearByCurrency[sym] || 0) - Number(expensePlusSubsThisYearByCurrency[sym] || 0);
+        });
+        return out;
+    }, [expensePlusSubsThisYearByCurrency, incomeThisYearByCurrency]);
+
     const primaryCurrency = useMemo(() => {
         const allSyms = Object.keys(subscriptionMonthlyByCurrency);
         if (allSyms.length > 0) return allSyms[0];
         const expSyms = Object.keys(expenseThisMonthByCurrency);
-        return expSyms[0] || '₩';
-    }, [expenseThisMonthByCurrency, subscriptionMonthlyByCurrency]);
+        if (expSyms.length > 0) return expSyms[0];
+        const incSyms = Object.keys(incomeThisMonthByCurrency);
+        return incSyms[0] || '₩';
+    }, [expenseThisMonthByCurrency, incomeThisMonthByCurrency, subscriptionMonthlyByCurrency]);
 
     const subscriptionMonthlyTotal = useMemo(() => {
         return subscriptions.reduce((sum, sub) => {
@@ -126,20 +179,34 @@ export default function Analytics() {
         return months;
     }, [expenses, currentYear]);
 
+    const incomeMonthlyTotals = useMemo(() => {
+        const months = getMonthLabels().map((m) => ({ ...m, income: 0 }));
+        incomes.forEach((e) => {
+            if (!e?.receivedAt) return;
+            const d = new Date(e.receivedAt);
+            if (isNaN(d.getTime())) return;
+            if (d.getFullYear() !== currentYear) return;
+            months[d.getMonth()].income += Number(e.amount || 0);
+        });
+        return months;
+    }, [currentYear, incomes]);
+
     const monthlyCompareData = useMemo(() => {
         return getMonthLabels()
             .filter((m) => m.month <= currentMonth)
             .map((m) => {
             const exp = expenseMonthlyTotals.find((x) => x.month === m.month)?.expenses || 0;
+            const inc = incomeMonthlyTotals.find((x) => x.month === m.month)?.income || 0;
             return {
                 name: m.name,
                 month: m.month,
+                income: inc,
                 subscriptions: subscriptionMonthlyTotal,
                 expenses: exp,
-                total: subscriptionMonthlyTotal + exp
+                net: inc - (subscriptionMonthlyTotal + exp)
             };
         });
-    }, [currentMonth, expenseMonthlyTotals, subscriptionMonthlyTotal]);
+    }, [currentMonth, expenseMonthlyTotals, incomeMonthlyTotals, subscriptionMonthlyTotal]);
 
     const subscriptionByCategory = useMemo(() => {
         const map = {};
@@ -167,6 +234,20 @@ export default function Analytics() {
         });
         return Object.values(map).filter((d) => d.value > 0);
     }, [currentMonth, currentYear, expenses]);
+
+    const incomeByCategoryThisMonth = useMemo(() => {
+        const map = {};
+        incomes.forEach((e) => {
+            if (!e?.receivedAt) return;
+            const d = new Date(e.receivedAt);
+            if (isNaN(d.getTime())) return;
+            if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return;
+            const cat = e.category || 'Общие';
+            if (!map[cat]) map[cat] = { name: cat, value: 0, color: e.color || '#22C55E' };
+            map[cat].value += Number(e.amount || 0);
+        });
+        return Object.values(map).filter((d) => d.value > 0);
+    }, [currentMonth, currentYear, incomes]);
 
     const RADIAN = Math.PI / 180;
     const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {
@@ -211,7 +292,7 @@ export default function Analytics() {
         <Layout>
             <div className="space-y-6">
                 {/* Monthly Cards */}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                     {/* Подписки/МЕС - фиолетовая карточка */}
                     <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm rounded-2xl">
                         {/* Декоративные круглые элементы */}
@@ -256,7 +337,29 @@ export default function Analytics() {
                         </div>
                     </Card>
 
-                    {/* Итого/МЕС - фиолетовая карточка */}
+                    {/* Доходы/МЕС - зелёная карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-green-500/10 border border-green-500/30 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-green-500/15"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-green-500/10"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <TrendingUp size={28} className="text-green-400" />
+                        </div>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">доходы/мес</span>
+                        <div className="flex flex-col gap-1 relative z-10 mt-1">
+                            {Object.entries(incomeThisMonthByCurrency).length > 0 ? (
+                                Object.entries(incomeThisMonthByCurrency).map(([curr, amount]) => (
+                                    <div key={curr} className="font-bold text-lg text-green-400 whitespace-nowrap">
+                                        {curr}{Number(amount || 0).toLocaleString()}
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="font-bold text-xl text-green-400">₩0</div>
+                            )}
+                        </div>
+                    </Card>
+
+                    {/* Баланс/МЕС - фиолетовая карточка */}
                     <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm rounded-2xl">
                         {/* Декоративные круглые элементы */}
                         <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/15"></div>
@@ -264,10 +367,10 @@ export default function Analytics() {
                         <div className="absolute top-2 right-2 opacity-20">
                             <TrendingUp size={28} className="text-purple-400" />
                         </div>
-                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">итого/мес</span>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">баланс/мес</span>
                         <div className="flex flex-col gap-1 relative z-10 mt-1">
-                            {Object.entries(totalThisMonthByCurrency).length > 0 ? (
-                                Object.entries(totalThisMonthByCurrency).map(([curr, amount]) => (
+                            {Object.entries(netThisMonthByCurrency).length > 0 ? (
+                                Object.entries(netThisMonthByCurrency).map(([curr, amount]) => (
                                     <div key={curr} className="font-bold text-lg text-purple-400 whitespace-nowrap">
                                         {curr}{Number(amount || 0).toLocaleString()}
                                     </div>
@@ -280,7 +383,7 @@ export default function Analytics() {
                 </div>
 
                 {/* Yearly Cards */}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                     {/* Подписки/ГОД - темная карточка */}
                     <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-black/50 border border-white/10 backdrop-blur-sm rounded-2xl">
                         {/* Декоративные круглые элементы */}
@@ -325,7 +428,29 @@ export default function Analytics() {
                         </div>
                     </Card>
 
-                    {/* Итого/ГОД - фиолетовая карточка */}
+                    {/* Доходы/ГОД - темная карточка */}
+                    <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-black/50 border border-white/10 backdrop-blur-sm rounded-2xl">
+                        {/* Декоративные круглые элементы */}
+                        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-white/8"></div>
+                        <div className="absolute top-1/3 right-0 w-20 h-20 rounded-full bg-white/5"></div>
+                        <div className="absolute top-2 right-2 opacity-20">
+                            <TrendingUp size={28} className="text-white" />
+                        </div>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">доходы/год</span>
+                        <div className="flex flex-col gap-1 relative z-10 mt-1">
+                            {Object.entries(incomeThisYearByCurrency).length > 0 ? (
+                                Object.entries(incomeThisYearByCurrency).map(([curr, amount]) => (
+                                    <div key={curr} className="font-bold text-lg text-white whitespace-nowrap">
+                                        {curr}{Number(amount || 0).toLocaleString()}
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="font-bold text-xl text-white">₩0</div>
+                            )}
+                        </div>
+                    </Card>
+
+                    {/* Баланс/ГОД - фиолетовая карточка */}
                     <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm rounded-2xl">
                         {/* Декоративные круглые элементы */}
                         <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-purple-500/15"></div>
@@ -333,10 +458,10 @@ export default function Analytics() {
                         <div className="absolute top-2 right-2 opacity-20">
                             <TrendingUp size={28} className="text-purple-400" />
                         </div>
-                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">итого/год</span>
+                        <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">баланс/год</span>
                         <div className="flex flex-col gap-1 relative z-10 mt-1">
-                            {Object.entries(totalThisYearByCurrency).length > 0 ? (
-                                Object.entries(totalThisYearByCurrency).map(([curr, amount]) => (
+                            {Object.entries(netThisYearByCurrency).length > 0 ? (
+                                Object.entries(netThisYearByCurrency).map(([curr, amount]) => (
                                     <div key={curr} className="font-bold text-lg text-purple-400 whitespace-nowrap">
                                         {curr}{Number(amount || 0).toLocaleString()}
                                     </div>
@@ -394,6 +519,64 @@ export default function Analytics() {
                         <div className="w-full mt-2 max-h-32 overflow-y-auto">
                             <div className="grid grid-cols-2 gap-2 px-2">
                                 {subscriptionByCategory.map(item => (
+                                    <div key={item.name} className="flex items-center gap-2 min-w-0">
+                                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: item.color }} />
+                                        <span className="text-xs text-text-secondary truncate">
+                                            <span className="font-medium">{item.name}:</span> {primaryCurrency}{Number(item.value || 0).toLocaleString()}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+
+                <Card className="bg-surface border-white/5 p-4">
+                    <h3 className="text-sm font-bold text-white mb-4">Доходы по категориям (этот месяц)</h3>
+                    <div className="h-64 w-full flex flex-col items-center justify-center">
+                        <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                                <Pie
+                                    data={incomeByCategoryThisMonth}
+                                    innerRadius={50}
+                                    outerRadius={90}
+                                    paddingAngle={5}
+                                    dataKey="value"
+                                    stroke="none"
+                                    label={renderCustomizedLabel}
+                                    labelLine={false}
+                                >
+                                    {incomeByCategoryThisMonth.map((entry, index) => (
+                                        <Cell key={`cell-inc-${index}`} fill={entry.color} />
+                                    ))}
+                                </Pie>
+                                <Tooltip
+                                    contentStyle={{ 
+                                        backgroundColor: '#1E1E1E', 
+                                        border: '1px solid rgba(255,255,255,0.1)', 
+                                        borderRadius: '8px',
+                                        padding: '8px 12px',
+                                        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+                                        color: '#FFFFFF'
+                                    }}
+                                    labelStyle={{ 
+                                        color: '#FFFFFF', 
+                                        fontSize: '12px',
+                                        marginBottom: '4px',
+                                        fontWeight: 'bold'
+                                    }}
+                                    itemStyle={{ 
+                                        color: '#FFFFFF', 
+                                        fontSize: '12px',
+                                        padding: '2px 0'
+                                    }}
+                                    formatter={(value, name) => [`${primaryCurrency}${Number(value || 0).toLocaleString()}`, name]}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        <div className="w-full mt-2 max-h-32 overflow-y-auto">
+                            <div className="grid grid-cols-2 gap-2 px-2">
+                                {incomeByCategoryThisMonth.map(item => (
                                     <div key={item.name} className="flex items-center gap-2 min-w-0">
                                         <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: item.color }} />
                                         <span className="text-xs text-text-secondary truncate">
@@ -465,7 +648,7 @@ export default function Analytics() {
                 </Card>
 
                 <Card className="bg-surface border-white/5 p-4">
-                    <h3 className="text-sm font-bold text-white mb-4">Подписки и расходы по месяцам</h3>
+                    <h3 className="text-sm font-bold text-white mb-4">Доходы и расходы по месяцам (баланс)</h3>
                     <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={monthlyCompareData} margin={{ top: 5, right: 5, left: 1, bottom: 1 }}>
@@ -522,17 +705,19 @@ export default function Analytics() {
                                     }}
                                     formatter={(value, name) => {
                                         const labelMap = {
+                                            income: 'Доходы',
                                             subscriptions: 'Подписки',
                                             expenses: 'Расходы',
-                                            total: 'Итого'
+                                            net: 'Баланс'
                                         };
                                         return [`${primaryCurrency}${Number(value || 0).toLocaleString()}`, labelMap[name] || name];
                                     }}
                                     cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                                 />
-                                {/* Stacked: stable (bottom) + expenses (top) */}
-                                <Bar dataKey="subscriptions" stackId="total" fill="#3B82F6" radius={[0, 0, 4, 4]} />
-                                <Bar dataKey="expenses" stackId="total" fill="#a78bfa" radius={[4, 4, 0, 0]} />
+                                <Bar dataKey="income" fill="#22C55E" radius={[4, 4, 0, 0]} />
+                                {/* расходы как стек: подписки + расходы */}
+                                <Bar dataKey="subscriptions" stackId="spend" fill="#3B82F6" radius={[0, 0, 4, 4]} />
+                                <Bar dataKey="expenses" stackId="spend" fill="#a78bfa" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>

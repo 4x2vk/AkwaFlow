@@ -7,11 +7,12 @@ const DEV_MODE_KEY = 'akwaflow_dev_mode';
 const DEV_UID_KEY = 'akwaflow_dev_uid';
 
 export const isDevMode = () => {
-    // SECURITY: Dev mode ONLY works in development environment
-    // In production build, import.meta.env.DEV will be false
-    // This prevents dev mode from being activated in production
-    if (!import.meta.env.DEV) {
-        return false; // Never allow dev mode in production
+    // SECURITY: Dev mode is disabled in production by default.
+    // If you really need to test a deployed build, set:
+    // VITE_ALLOW_DEV_MODE_IN_PROD=true
+    const allowInProd = String(import.meta.env.VITE_ALLOW_DEV_MODE_IN_PROD || '').toLowerCase() === 'true';
+    if (!import.meta.env.DEV && !allowInProd) {
+        return false;
     }
     
     // Check URL parameter first - if found, enable and save to localStorage
