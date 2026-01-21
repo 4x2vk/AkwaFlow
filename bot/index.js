@@ -319,6 +319,7 @@ const buildHelpMessage = () => {
         '• удалять доходы и расходы по названию',
         '• понимать разные валюты (₩ / ₽ / $ / ₸ и слова вроде “вон”, “руб”, “тенге”)',
         '• понимать базовые команды на русском/английском/корейском',
+        '• указывать категории (категория Название)',
         '',
         'Примеры:',
         '• «Добавь Netflix 10000 вон 12 числа»',
@@ -328,6 +329,8 @@ const buildHelpMessage = () => {
         '• «Потратил 5000₩ такси вчера»',
         '• «Доход 500000₩ зарплата сегодня»',
         '• «Получил 2000$ фриланс 17.02»',
+        '• «Добавь компьютер 100000вон сегодня категория Купанг»',
+        '• «Expense 50$ food today category Food»',
         '• «Starbucks 6000 won today»',
         '• «스타벅스 6000원 오늘»',
         '• «Мои расходы»',
@@ -603,13 +606,45 @@ const extractTitleGeneric = (rawText) => {
         'доллар', 'доллара', 'долларов', 'бакс', 'баксов',
         'тенге', 'тенг', 'тг',
         'вон', 'вона', 'воны',
-        '원', '만원', '천원'
+        '원', '만원', '천원',
+        // Category labels
+        'категория', 'категории', 'категорию', 'кат', 'category', '카테고리', '분류'
     ]);
 
     const tokens = lower.split(/\s+/g).filter(Boolean);
+    const category = extractCategory(rawText, detectLanguage(rawText));
+    const categoryLower = category ? category.toLowerCase().trim() : null;
+    const categoryTokens = categoryLower ? categoryLower.split(/\s+/g).filter(Boolean) : [];
     const out = [];
 
-    for (let tok of tokens) {
+    for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        
+        // Skip category label tokens
+        if (stop.has(tok) && (tok === 'категория' || tok === 'category' || tok === '카테고리' || tok === '분류' || tok === 'кат')) {
+            // Skip the category label and the next token(s) that match the category value
+            continue;
+        }
+        
+        // Skip tokens that match the category value (handle multi-word categories)
+        if (categoryTokens.length > 0) {
+            let matchesCategory = false;
+            // Check if current token starts a sequence matching category tokens
+            for (let j = 0; j < categoryTokens.length && i + j < tokens.length; j++) {
+                if (tokens[i + j] === categoryTokens[j]) {
+                    if (j === categoryTokens.length - 1) {
+                        matchesCategory = true;
+                        // Skip all tokens in this category sequence
+                        i += j;
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            if (matchesCategory) continue;
+        }
+
         // Drop pure numbers
         if (/^\d+(?:[.,]\d+)?$/.test(tok)) continue;
 
@@ -637,6 +672,52 @@ const extractTitleGeneric = (rawText) => {
     return title.length > 120 ? title.slice(0, 120) : title;
 };
 
+// Extract category from phrases like:
+// "категория Купанг", "category Food", "카테고리 쇼핑"
+const extractCategory = (rawText, lang) => {
+    const text = normalizeText(rawText);
+    const lower = text.toLowerCase();
+
+    // Simple patterns per language - match anywhere, prefer last match
+    const patterns = [
+        // RU
+        /\bкатегор(?:ия|ии|ию|ией)?\s+([^\d.,;]+?)(?:\s|$)/gi,
+        // EN
+        /\bcategory\s+([^\d.,;]+?)(?:\s|$)/gi,
+        // Short RU alias
+        /\bкат\s+([^\d.,;]+?)(?:\s|$)/gi,
+        // KO
+        /(카테고리|분류)\s+([^\d.,;]+?)(?:\s|$)/gi
+    ];
+
+    let matchText = null;
+    for (const re of patterns) {
+        const matches = [...text.matchAll(re)];
+        if (matches.length > 0) {
+            // Take the last match (usually at the end of phrase)
+            const lastMatch = matches[matches.length - 1];
+            // Last capturing group is the value
+            matchText = lastMatch[lastMatch.length - 1];
+        }
+    }
+
+    if (!matchText) return null;
+
+    let cat = matchText.trim();
+    // Remove extra spaces and trailing service words
+    cat = cat.replace(/\s+/g, ' ');
+
+    // Normalize case: first letter upper, rest as is
+    if (cat.length === 0) return null;
+
+    // For non-latin, just trim; for latin, capitalize first
+    if (/^[a-z]/i.test(cat[0])) {
+        cat = cat[0].toUpperCase() + cat.slice(1);
+    }
+
+    return cat;
+};
+
 const extractSlotsV2 = (rawText, intentInfo) => {
     const normalized = normalizeText(rawText);
     const lang = intentInfo?.lang || detectLanguage(rawText);
@@ -649,6 +730,7 @@ const extractSlotsV2 = (rawText, intentInfo) => {
     const subscriptionDate = parseDateEnhanced(normalized);
     const txDate = parseTransactionDate(normalized);
     const title = extractTitleGeneric(normalized);
+    const category = extractCategory(rawText, lang);
 
     return {
         lang,
@@ -664,7 +746,8 @@ const extractSlotsV2 = (rawText, intentInfo) => {
         transaction: {
             at: txDate
         },
-        title
+        title,
+        category
     };
 };
 
@@ -899,7 +982,7 @@ const processTextCommand = async (chatId, text) => {
                         currency: baseSlots.currencyCode || 'WON',
                         currencySymbol: baseSlots.currencySymbol || '₩',
                         spentAt: baseSlots.transaction?.at,
-                        category: 'Общие',
+                        category: baseSlots.category || 'Общие',
                         color: '#a78bfa',
                         note: '',
                         icon: String(title || '?')[0].toUpperCase(),
@@ -920,7 +1003,7 @@ const processTextCommand = async (chatId, text) => {
                         currency: baseSlots.currencyCode || 'WON',
                         currencySymbol: baseSlots.currencySymbol || '₩',
                         receivedAt: baseSlots.transaction?.at,
-                        category: 'Общие',
+                        category: baseSlots.category || 'Общие',
                         color: '#22C55E',
                         note: '',
                         icon: String(title || '?')[0].toUpperCase(),
@@ -942,7 +1025,7 @@ const processTextCommand = async (chatId, text) => {
                     billingPeriod: baseSlots.billingPeriod || 'monthly',
                     cycle: baseSlots.subscription?.cycle || 'Каждый 1 числа',
                     nextPaymentDate: baseSlots.subscription?.nextPaymentDate,
-                    category: 'Общие',
+                    category: baseSlots.category || 'Общие',
                     color: '#a78bfa',
                     icon: String(title || '?')[0].toUpperCase(),
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
@@ -1260,7 +1343,7 @@ const processTextCommand = async (chatId, text) => {
                 currency: slots.currencyCode || 'WON',
                 currencySymbol: slots.currencySymbol || '₩',
                 spentAt,
-                category: 'Общие',
+                category: slots.category || 'Общие',
                 color: '#a78bfa',
                 note: '',
                 icon: String(title || '?')[0].toUpperCase(),
@@ -1311,7 +1394,7 @@ const processTextCommand = async (chatId, text) => {
                 currency: slots.currencyCode || 'WON',
                 currencySymbol: slots.currencySymbol || '₩',
                 receivedAt,
-                category: 'Общие',
+                category: slots.category || 'Общие',
                 color: '#22C55E',
                 note: '',
                 icon: String(title || '?')[0].toUpperCase(),
@@ -1371,7 +1454,7 @@ const processTextCommand = async (chatId, text) => {
                     ? `Ежегодно${date ? `, ${new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}` : ''}`
                     : cycle,
                 nextPaymentDate: date,
-                category: 'Общие',
+                category: slots.category || 'Общие',
                 color: '#a78bfa',
                 icon: name[0].toUpperCase(),
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
