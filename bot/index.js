@@ -269,6 +269,28 @@ const detectIntentV2 = (rawText) => {
         return { intent: 'remove', lang, confidence: 0.7 }; // legacy: subscription remove by name
     }
 
+    // Category operations - check BEFORE other add operations to avoid conflicts
+    // Category list - "мои категории", "список категорий"
+    if (
+        t.includes('мои категории') || t.includes('my categories') || t.includes('내 카테고리') ||
+        (hasAnyToken(['список', 'list', 'покажи', 'показать', 'show']) && hasAnyToken(['категори', 'category', '카테고리', '분류']))
+    ) return { intent: 'category_list', lang, confidence: 0.95 };
+
+    // Category remove - "удали категорию Бургер", "delete category Food"
+    if (has(removeRe) && (hasAnyToken(['категори', 'category', '카테고리', '분류']) || t.includes('категори'))) {
+        return { intent: 'category_remove', lang, confidence: 0.9 };
+    }
+
+    // Category add - "добавь категорию Бургер", "add category Food"
+    // Use simpler check: look for category keyword + add verb, or just "категория" + name
+    if (
+        (hasAnyToken(['добав', 'создай', 'запиши', 'оформи', 'подключи', 'add', '추가', '등록']) && 
+         (hasAnyToken(['категори', 'category', '카테고리', '분류']) || t.includes('категори'))) ||
+        (t.includes('категори') && !has(removeRe) && !t.includes('список') && !t.includes('list'))
+    ) {
+        return { intent: 'category_add', lang, confidence: 0.9 };
+    }
+
     // Explicit add type triggers
     const expenseTokens = ['расход', 'расходы', 'трата', 'траты', 'потратил', 'потратила', 'купил', 'купила', 'spend', 'spent', 'expense', '지출', '썼어', '사용', '결제'];
     const incomeTokens = ['доход', 'доходы', 'прибыль', 'получил', 'получила', 'заработал', 'заработала', 'income', 'earned', '수입', '월급', '받았'];
@@ -298,6 +320,27 @@ const detectIntentV2 = (rawText) => {
     // Money but no clear type -> ask
     if (hasMoney) return { intent: 'add_ambiguous', lang, confidence: 0.45 };
 
+    // Category list - "мои категории", "список категорий"
+    const categoryKeywords = ['категори', 'category', '카테고리', '분류'];
+    const hasCategoryKeyword = categoryKeywords.some(kw => t.includes(kw));
+    
+    if (
+        (t.includes('список') || t.includes('list') || t.includes('покажи') || t.includes('показать') || t.includes('show')) && hasCategoryKeyword ||
+        t.includes('мои категории') || t.includes('my categories') || t.includes('내 카테고리')
+    ) return { intent: 'category_list', lang, confidence: 0.95 };
+
+    // Category remove - "удали категорию Бургер", "delete category Food"
+    if (has(removeRe) && hasCategoryKeyword) {
+        return { intent: 'category_remove', lang, confidence: 0.9 };
+    }
+
+    // Category add - "добавь категорию Бургер", "add category Food"
+    // Check for add verbs and category keywords using includes (more reliable for Cyrillic)
+    const hasAddVerb = addVerbTokens.some(verb => t.includes(verb));
+    if (hasAddVerb && hasCategoryKeyword) {
+        return { intent: 'category_add', lang, confidence: 0.9 };
+    }
+
     // Backward-compatible: old "list" keyword
     if (hasAnyToken(['список', 'list', 'subscriptions'])) return { intent: 'subscription_list', lang, confidence: 0.55 };
 
@@ -312,11 +355,14 @@ const buildHelpMessage = () => {
         '• добавлять подписки (текстом или голосом)',
         '• добавлять разовые расходы',
         '• добавлять разовые доходы',
+        '• создавать категории',
         '• показывать список ваших подписок',
         '• показывать список ваших расходов',
         '• показывать список ваших доходов',
+        '• показывать список ваших категорий',
         '• удалять подписки по названию',
         '• удалять доходы и расходы по названию',
+        '• удалять категории по названию',
         '• понимать разные валюты (₩ / ₽ / $ / ₸ и слова вроде “вон”, “руб”, “тенге”)',
         '• понимать базовые команды на русском/английском/корейском',
         '• указывать категории (категория Название)',
@@ -330,13 +376,16 @@ const buildHelpMessage = () => {
         '• «Доход 500000₩ зарплата сегодня»',
         '• «Получил 2000$ фриланс 17.02»',
         '• «Добавь компьютер 100000вон сегодня категория Купанг»',
+        '• «Добавь категорию Бургер»',
         '• «Expense 50$ food today category Food»',
         '• «Starbucks 6000 won today»',
         '• «스타벅스 6000원 오늘»',
         '• «Мои расходы»',
         '• «Мои доходы»',
+        '• «Мои категории»',
         '• «Удали Netflix»',
         '• «Удали доход зарплата»',
+        '• «Удали категорию Бургер»',
         '• «Мои подписки»',
         '',
         'Если чего-то не хватит (суммы/даты) — я вежливо уточню.',
@@ -355,6 +404,7 @@ const buildWelcomeMessage = () => {
         '• «Добавь Netflix 10000 вон 12 числа»',
         '• «Расход 12000 вон кафе сегодня»',
         '• «Доход 500000₩ зарплата сегодня»',
+        '• «Добавь категорию Бургер»',
         '• «Удали Spotify»',
         '• «Удали доход зарплата»',
         '• «Мои подписки»',
@@ -692,20 +742,21 @@ const extractTitleGeneric = (rawText) => {
 };
 
 // Extract category from phrases like:
-// "категория Купанг", "category Food", "카테고리 쇼핑"
+// "категория Купанг", "category Food", "카테고리 쇼핑", "добавь категорию Бургер"
+// Also works for removal: "удали категорию Бургер"
 const extractCategory = (rawText, lang) => {
     const text = normalizeText(rawText);
     // NOTE: JS \\b is ASCII-only and breaks on Cyrillic.
     // Use Unicode-aware boundaries instead: (^|[^\\p{L}\\p{N}_]) ... (?:$|[^\\p{L}\\p{N}_])
     const patterns = [
-        // RU: категория <name>
-        { re: /(^|[^\p{L}\p{N}_])категор(?:ия|ии|ию|ией)?\s+([^\d.,;]+?)(?=$|[^\p{L}\p{N}_])/giu, group: 2 },
+        // RU: категория <name> or добавь категорию <name> or удали категорию <name>
+        { re: /(?:^|[^\p{L}\p{N}_])(?:добав(?:ь|ить|ляй|им)|создай|запиши|оформи|подключи|удал(?:и|ить)|убери|сотри|отмени|remove|delete|add|추가|등록)?\s*категор(?:ия|ии|ию|ией)?\s+([^\d.,;]+?)(?:\s|$|[^\p{L}\p{N}_])/giu, group: 1 },
         // RU short: кат <name>
-        { re: /(^|[^\p{L}\p{N}_])кат\s+([^\d.,;]+?)(?=$|[^\p{L}\p{N}_])/giu, group: 2 },
-        // EN: category <name>
-        { re: /\bcategory\s+([^\d.,;]+?)(?=$|\s)/giu, group: 1 },
+        { re: /(?:^|[^\p{L}\p{N}_])(?:добав(?:ь|ить|ляй|им)|создай|запиши|оформи|подключи|удал(?:и|ить)|убери|сотри|отмени|remove|delete|add|추가|등록)?\s*кат\s+([^\d.,;]+?)(?:\s|$|[^\p{L}\p{N}_])/giu, group: 1 },
+        // EN: category <name> or add category <name> or delete category <name>
+        { re: /(?:^|\s)(?:add|create|make|remove|delete)?\s*category\s+([^\d.,;]+?)(?:\s|$)/giu, group: 1 },
         // KO: 카테고리/분류 <name>
-        { re: /(카테고리|분류)\s+([^\d.,;]+?)(?=$|\s)/giu, group: 2 }
+        { re: /(?:^|\s)(?:추가|등록|삭제)?\s*(카테고리|분류)\s+([^\d.,;]+?)(?:\s|$)/giu, group: 2 }
     ];
 
     let matchText = null;
@@ -1249,6 +1300,39 @@ const processTextCommand = async (chatId, text) => {
                 return;
             }
         }
+
+        if (pending.type === 'category_remove') {
+            const options = pending.data?.options || [];
+            const answer = normalized.trim();
+            const idx = parseInt(answer, 10);
+            let chosen = null;
+            if (!isNaN(idx) && idx >= 1 && idx <= options.length) {
+                chosen = options[idx - 1];
+            } else {
+                chosen = options.find(o => String(o.name || '').toLowerCase() === answer.toLowerCase()) || null;
+            }
+            if (!chosen) {
+                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер (например 1) или точное название из списка.');
+                return;
+            }
+            try {
+                // Check if category is "Общие" (default) - don't allow deletion
+                if (chosen.name === 'Общие' || chosen.name.toLowerCase() === 'общие') {
+                    clearPending(chatId);
+                    bot.sendMessage(chatId, '😔 Нельзя удалить категорию "Общие" — это категория по умолчанию.');
+                    return;
+                }
+                await chosen.ref.delete();
+                clearPending(chatId);
+                bot.sendMessage(chatId, `✅ Готово! Категория "${chosen.name}" удалена. 😊`);
+                return;
+            } catch (e) {
+                console.error('[BOT] Pending category remove error:', e);
+                clearPending(chatId);
+                bot.sendMessage(chatId, '😔 Не получилось удалить категорию. Попробуйте позже.');
+                return;
+            }
+        }
     }
 
     // HELP / START / GREET
@@ -1526,9 +1610,25 @@ const processTextCommand = async (chatId, text) => {
     // REMOVE (will be improved further, but already route here)
     if (intent === 'remove' || intent === 'subscription_remove') {
         const t = normalizeText(normalized);
-        let nameToRemove = t.replace(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/gi, ' ').trim();
-        if (!nameToRemove) {
-            bot.sendMessage(chatId, 'Какую подписку удалить? Напишите, например: «Удали Netflix». 🙂');
+        // Remove all delete verbs and subscription-related words
+        let nameToRemove = t
+            .replace(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/gi, ' ')
+            .replace(/\b(подписк(?:а|у|и)?|subscription|sub|구독)\b/gi, ' ')
+            .trim();
+        
+        // If still empty, try to extract any remaining meaningful words
+        if (!nameToRemove || nameToRemove.length < 2) {
+            // Try to find any word that's not a stop word
+            const words = t.split(/\s+/).filter(w => {
+                const lower = w.toLowerCase();
+                return !/\b(удал(и|ить)|убери|сотри|отмени|remove|delete|подписк(?:а|у|и)?|subscription|sub|구독)\b/gi.test(lower) 
+                    && lower.length >= 2;
+            });
+            nameToRemove = words.join(' ').trim();
+        }
+        
+        if (!nameToRemove || nameToRemove.length < 2) {
+            bot.sendMessage(chatId, 'Какую подписку удалить? Напишите, например: «Удали Netflix» или «Удали подписку тест». 🙂');
             return;
         }
         try {
@@ -1579,11 +1679,21 @@ const processTextCommand = async (chatId, text) => {
         const t = normalizeText(normalized);
         let titleToRemove = t
             .replace(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/gi, ' ')
-            .replace(/\b(расход|расходы|трата|траты)\b/gi, ' ')
+            .replace(/\b(расход|расходы|трата|траты|expense|spent|spend|지출)\b/gi, ' ')
             .trim();
+        
+        // If still empty, try to extract any remaining meaningful words
+        if (!titleToRemove || titleToRemove.length < 2) {
+            const words = t.split(/\s+/).filter(w => {
+                const lower = w.toLowerCase();
+                return !/\b(удал(и|ить)|убери|сотри|отмени|remove|delete|расход|расходы|трата|траты|expense|spent|spend|지출)\b/gi.test(lower) 
+                    && lower.length >= 2;
+            });
+            titleToRemove = words.join(' ').trim();
+        }
 
-        if (!titleToRemove) {
-            bot.sendMessage(chatId, 'Какой расход удалить? Например: «Удали расход такси». 🙂');
+        if (!titleToRemove || titleToRemove.length < 2) {
+            bot.sendMessage(chatId, 'Какой расход удалить? Например: «Удали расход такси» или «Удали такси». 🙂');
             return;
         }
 
@@ -1635,11 +1745,21 @@ const processTextCommand = async (chatId, text) => {
         const t = normalizeText(normalized);
         let titleToRemove = t
             .replace(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/gi, ' ')
-            .replace(/\b(доход|доходы|прибыл(ь|и)|заработал|заработала|получил|получила)\b/gi, ' ')
+            .replace(/\b(доход|доходы|прибыл(ь|и)|заработал|заработала|получил|получила|income|earned|수입)\b/gi, ' ')
             .trim();
+        
+        // If still empty, try to extract any remaining meaningful words
+        if (!titleToRemove || titleToRemove.length < 2) {
+            const words = t.split(/\s+/).filter(w => {
+                const lower = w.toLowerCase();
+                return !/\b(удал(и|ить)|убери|сотри|отмени|remove|delete|доход|доходы|прибыл(ь|и)|заработал|заработала|получил|получила|income|earned|수입)\b/gi.test(lower) 
+                    && lower.length >= 2;
+            });
+            titleToRemove = words.join(' ').trim();
+        }
 
-        if (!titleToRemove) {
-            bot.sendMessage(chatId, 'Какой доход удалить? Например: «Удали доход зарплата». 🙂');
+        if (!titleToRemove || titleToRemove.length < 2) {
+            bot.sendMessage(chatId, 'Какой доход удалить? Например: «Удали доход зарплата» или «Удали зарплата». 🙂');
             return;
         }
 
@@ -1682,6 +1802,162 @@ const processTextCommand = async (chatId, text) => {
         } catch (e) {
             console.error('[BOT] Income remove error:', e);
             bot.sendMessage(chatId, '😔 Извините, произошла ошибка при удалении дохода. Попробуйте еще раз позже. 🙏');
+            return;
+        }
+    }
+
+    // CATEGORY LIST
+    if (intent === 'category_list') {
+        try {
+            const categoriesRef = db.collection('users').doc(String(chatId)).collection('categories');
+            const snapshot = await categoriesRef.get();
+            
+            if (snapshot.empty) {
+                bot.sendMessage(chatId, '📭 У вас пока нет категорий.\nСоздайте первую: «Добавь категорию Бургер» 🙂');
+                return;
+            }
+
+            let response = '📋 *Ваши категории:*\n\n';
+            snapshot.docs.forEach((doc, index) => {
+                const data = doc.data();
+                response += `${index + 1}) *${data.name}*\n`;
+            });
+            bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
+            return;
+        } catch (e) {
+            console.error('[BOT] Category list error:', e);
+            bot.sendMessage(chatId, '😔 Не удалось получить список категорий. Попробуйте позже. 🙏');
+            return;
+        }
+    }
+
+    // CATEGORY REMOVE
+    if (intent === 'category_remove') {
+        let categoryName = extractCategory(rawText, detectLanguage(rawText));
+        
+        // If extractCategory didn't work, try manual extraction
+        if (!categoryName || categoryName.length < 2) {
+            const t = normalizeText(normalized);
+            categoryName = t
+                .replace(/\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/gi, ' ')
+                .replace(/\b(категори(?:я|и|ю|ей)?|category|카테고리|분류|кат)\b/gi, ' ')
+                .trim();
+            
+            if (!categoryName || categoryName.length < 2) {
+                const words = t.split(/\s+/).filter(w => {
+                    const lower = w.toLowerCase();
+                    return !/\b(удал(и|ить)|убери|сотри|отмени|remove|delete|категори(?:я|и|ю|ей)?|category|카테고리|분류|кат)\b/gi.test(lower) 
+                        && lower.length >= 2;
+                });
+                categoryName = words.join(' ').trim();
+            }
+            
+            if (categoryName && categoryName.length >= 1) {
+                categoryName = categoryName[0].toUpperCase() + categoryName.slice(1);
+            }
+        }
+
+        if (!categoryName || categoryName.length < 2) {
+            bot.sendMessage(chatId, 'Какую категорию удалить? Например: «Удали категорию Бургер» или «Удали категорию Еда». 🙂');
+            return;
+        }
+
+        try {
+            const categoriesRef = db.collection('users').doc(String(chatId)).collection('categories');
+            const snapshot = await categoriesRef.get();
+            
+            if (snapshot.empty) {
+                bot.sendMessage(chatId, 'У вас пока нет категорий — удалять нечего 🙂');
+                return;
+            }
+
+            const wanted = categoryName.toLowerCase();
+            const matches = snapshot.docs
+                .map(d => ({ ref: d.ref, data: d.data(), id: d.id }))
+                .filter(({ data }) => {
+                    const n = String(data.name || '').toLowerCase();
+                    return n === wanted || n.includes(wanted) || wanted.includes(n);
+                });
+
+            if (matches.length === 0) {
+                bot.sendMessage(chatId, `😔 Не нашёл категорию "${categoryName}".\nМогу показать список: напишите «Мои категории».`);
+                return;
+            }
+            if (matches.length > 1) {
+                const list = matches.slice(0, 10).map((m, i) => `${i + 1}) ${m.data.name}`).join('\n');
+                setPending(chatId, {
+                    type: 'category_remove',
+                    step: 'choose_one',
+                    data: {
+                        options: matches.slice(0, 10).map(m => ({ name: m.data.name, ref: m.ref }))
+                    }
+                });
+                bot.sendMessage(chatId, `Нашёл несколько вариантов. Выберите номер:\n\n${list}\n\n(или напишите «отмена»)`);
+                return;
+            }
+
+            // Check if category is "Общие" (default) - don't allow deletion
+            if (matches[0].data.name === 'Общие' || matches[0].data.name.toLowerCase() === 'общие') {
+                bot.sendMessage(chatId, '😔 Нельзя удалить категорию "Общие" — это категория по умолчанию.');
+                return;
+            }
+
+            await matches[0].ref.delete();
+            bot.sendMessage(chatId, `✅ Готово! Категория "${matches[0].data.name}" удалена. 😊`);
+            return;
+        } catch (e) {
+            console.error('[BOT] Category remove error:', e);
+            bot.sendMessage(chatId, '😔 Извините, произошла ошибка при удалении категории. Попробуйте еще раз позже. 🙏');
+            return;
+        }
+    }
+
+    // CATEGORY ADD
+    if (intent === 'category_add') {
+        // First try extractCategory function which handles "категория <name>" pattern
+        let categoryName = extractCategory(rawText, detectLanguage(rawText));
+        
+        // If extractCategory didn't work, try manual extraction
+        if (!categoryName || categoryName.length < 2) {
+            const t = normalizeText(normalized);
+            // Extract category name - remove add verbs and category labels
+            categoryName = t
+                .replace(/\b(добав(ь|ить|ляй|им)|создай|запиши|оформи|подключи|add|추가|등록)\b/gi, ' ')
+                .replace(/\b(категори(?:я|и|ю|ей)?|category|카테고리|분류|кат)\b/gi, ' ')
+                .trim();
+            
+            // If still empty, try to find any remaining meaningful words
+            if (!categoryName || categoryName.length < 2) {
+                const words = t.split(/\s+/).filter(w => {
+                    const lower = w.toLowerCase();
+                    return !/\b(добав(ь|ить|ляй|им)|создай|запиши|оформи|подключи|add|추가|등록|категори(?:я|и|ю|ей)?|category|카테고리|분류|кат)\b/gi.test(lower) 
+                        && lower.length >= 2;
+                });
+                categoryName = words.join(' ').trim();
+            }
+            
+            // Capitalize first letter if we have a name
+            if (categoryName && categoryName.length >= 1) {
+                categoryName = categoryName[0].toUpperCase() + categoryName.slice(1);
+            }
+        }
+
+        if (!categoryName || categoryName.length < 2) {
+            bot.sendMessage(chatId, 'Как назвать категорию? Например: «Добавь категорию Бургер» или «Добавь категорию Еда». 🙂');
+            return;
+        }
+
+        try {
+            const createdCategoryName = await ensureCategoryForUser(chatId, categoryName);
+            if (createdCategoryName) {
+                bot.sendMessage(chatId, `✅ Готово! Категория "${createdCategoryName}" создана. 😊\n\nТеперь вы можете использовать её при добавлении подписок, расходов и доходов.`);
+            } else {
+                bot.sendMessage(chatId, '😔 Не получилось создать категорию. Попробуйте, пожалуйста, ещё раз.');
+            }
+            return;
+        } catch (e) {
+            console.error('[BOT] Error adding category:', e);
+            bot.sendMessage(chatId, '😔 Не получилось создать категорию. Попробуйте, пожалуйста, ещё раз чуть позже.');
             return;
         }
     }
@@ -2219,4 +2495,4 @@ console.log('='.repeat(50));
 } // end RUN_MODE === 'bot'
 
 // Expose NLU helpers for self-tests / tooling
-export { detectIntentV2, extractSlotsV2, detectLanguage, normalizeText };
+export { detectIntentV2, extractSlotsV2, detectLanguage, normalizeText, extractCategory };
