@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, query, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, query, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { validateAndSanitizeIncome } from '../lib/validation';
@@ -38,8 +38,14 @@ export function IncomeProvider({ children }) {
 
                 items.push({ id: d.id, ...processed });
             });
-            // Sort newest first (by receivedAt then createdAt)
+            // Sort by order field, then by receivedAt/createdAt if order is missing
             items.sort((a, b) => {
+                const aOrder = a.order !== undefined ? a.order : Infinity;
+                const bOrder = b.order !== undefined ? b.order : Infinity;
+                if (aOrder !== bOrder) {
+                    return aOrder - bOrder;
+                }
+                // If order is the same or missing, sort newest first
                 const aTime = new Date(a.receivedAt || a.createdAt || 0).getTime();
                 const bTime = new Date(b.receivedAt || b.createdAt || 0).getTime();
                 return bTime - aTime;
@@ -62,7 +68,15 @@ export function IncomeProvider({ children }) {
 
     const addIncome = async (income) => {
         if (!user || user.uid === 'demo_user') {
-            const newItem = { ...income, id: Date.now().toString(), createdAt: new Date().toISOString() };
+            const maxOrder = incomes.length > 0 
+                ? Math.max(...incomes.map(i => i.order || 0))
+                : -1;
+            const newItem = { 
+                ...income, 
+                id: Date.now().toString(), 
+                order: maxOrder + 1,
+                createdAt: new Date().toISOString() 
+            };
             setIncomes((prev) => [newItem, ...prev]);
             return;
         }
@@ -73,9 +87,14 @@ export function IncomeProvider({ children }) {
             return;
         }
 
+        const maxOrder = incomes.length > 0 
+            ? Math.max(...incomes.map(i => i.order || 0))
+            : -1;
+
         try {
             await addDoc(collection(db, 'users', user.uid, 'incomes'), {
                 ...validation.data,
+                order: maxOrder + 1,
                 createdAt: new Date().toISOString()
             });
         } catch (error) {
@@ -111,13 +130,61 @@ export function IncomeProvider({ children }) {
         await updateDoc(doc(db, 'users', user.uid, 'incomes', id), validation.data);
     };
 
+    const reorderIncomes = async (oldIndex, newIndex) => {
+        if (oldIndex === newIndex) return;
+        
+        const sortedIncomes = [...incomes].sort((a, b) => {
+            const aOrder = a.order !== undefined ? a.order : Infinity;
+            const bOrder = b.order !== undefined ? b.order : Infinity;
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
+            }
+            const aTime = new Date(a.receivedAt || a.createdAt || 0).getTime();
+            const bTime = new Date(b.receivedAt || b.createdAt || 0).getTime();
+            return bTime - aTime;
+        });
+        
+        const [movedItem] = sortedIncomes.splice(oldIndex, 1);
+        sortedIncomes.splice(newIndex, 0, movedItem);
+        
+        // Update orders
+        const updates = sortedIncomes.map((income, index) => ({
+            id: income.id,
+            order: index
+        }));
+        
+        if (!user || user.uid === 'demo_user') {
+            // Update local state
+            const updatedIncomes = incomes.map(income => {
+                const update = updates.find(u => u.id === income.id);
+                return update ? { ...income, order: update.order } : income;
+            });
+            setIncomes(updatedIncomes);
+            return;
+        }
+        
+        // Update Firestore in batch
+        try {
+            const batch = writeBatch(db);
+            updates.forEach(({ id, order }) => {
+                const incomeRef = doc(db, 'users', user.uid, 'incomes', id);
+                batch.update(incomeRef, { order });
+            });
+            await batch.commit();
+        } catch (error) {
+            console.error('[INCOMES] Error reordering incomes:', error);
+            alert('Ошибка при изменении порядка доходов');
+        }
+    };
+
     return (
         <IncomeContext.Provider value={{
             incomes: visibleIncomes,
             loading,
             addIncome,
             removeIncome,
-            updateIncome
+            updateIncome,
+            reorderIncomes
         }}>
             {children}
         </IncomeContext.Provider>

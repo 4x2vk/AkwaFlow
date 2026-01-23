@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, query, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, query, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { validateAndSanitizeExpense } from '../lib/validation';
@@ -38,8 +38,14 @@ export function ExpenseProvider({ children }) {
 
                 items.push({ id: d.id, ...processed });
             });
-            // Sort newest first (by spentAt then createdAt)
+            // Sort by order field, then by spentAt/createdAt if order is missing
             items.sort((a, b) => {
+                const aOrder = a.order !== undefined ? a.order : Infinity;
+                const bOrder = b.order !== undefined ? b.order : Infinity;
+                if (aOrder !== bOrder) {
+                    return aOrder - bOrder;
+                }
+                // If order is the same or missing, sort newest first
                 const aTime = new Date(a.spentAt || a.createdAt || 0).getTime();
                 const bTime = new Date(b.spentAt || b.createdAt || 0).getTime();
                 return bTime - aTime;
@@ -62,7 +68,15 @@ export function ExpenseProvider({ children }) {
 
     const addExpense = async (expense) => {
         if (!user || user.uid === 'demo_user') {
-            const newItem = { ...expense, id: Date.now().toString(), createdAt: new Date().toISOString() };
+            const maxOrder = expenses.length > 0 
+                ? Math.max(...expenses.map(e => e.order || 0))
+                : -1;
+            const newItem = { 
+                ...expense, 
+                id: Date.now().toString(), 
+                order: maxOrder + 1,
+                createdAt: new Date().toISOString() 
+            };
             setExpenses((prev) => [newItem, ...prev]);
             return;
         }
@@ -73,8 +87,13 @@ export function ExpenseProvider({ children }) {
             return;
         }
 
+        const maxOrder = expenses.length > 0 
+            ? Math.max(...expenses.map(e => e.order || 0))
+            : -1;
+
         await addDoc(collection(db, 'users', user.uid, 'expenses'), {
             ...validation.data,
+            order: maxOrder + 1,
             createdAt: new Date().toISOString()
         });
     };
@@ -103,13 +122,61 @@ export function ExpenseProvider({ children }) {
         await updateDoc(doc(db, 'users', user.uid, 'expenses', id), validation.data);
     };
 
+    const reorderExpenses = async (oldIndex, newIndex) => {
+        if (oldIndex === newIndex) return;
+        
+        const sortedExpenses = [...expenses].sort((a, b) => {
+            const aOrder = a.order !== undefined ? a.order : Infinity;
+            const bOrder = b.order !== undefined ? b.order : Infinity;
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
+            }
+            const aTime = new Date(a.spentAt || a.createdAt || 0).getTime();
+            const bTime = new Date(b.spentAt || b.createdAt || 0).getTime();
+            return bTime - aTime;
+        });
+        
+        const [movedItem] = sortedExpenses.splice(oldIndex, 1);
+        sortedExpenses.splice(newIndex, 0, movedItem);
+        
+        // Update orders
+        const updates = sortedExpenses.map((expense, index) => ({
+            id: expense.id,
+            order: index
+        }));
+        
+        if (!user || user.uid === 'demo_user') {
+            // Update local state
+            const updatedExpenses = expenses.map(expense => {
+                const update = updates.find(u => u.id === expense.id);
+                return update ? { ...expense, order: update.order } : expense;
+            });
+            setExpenses(updatedExpenses);
+            return;
+        }
+        
+        // Update Firestore in batch
+        try {
+            const batch = writeBatch(db);
+            updates.forEach(({ id, order }) => {
+                const expenseRef = doc(db, 'users', user.uid, 'expenses', id);
+                batch.update(expenseRef, { order });
+            });
+            await batch.commit();
+        } catch (error) {
+            console.error('[EXPENSES] Error reordering expenses:', error);
+            alert('Ошибка при изменении порядка расходов');
+        }
+    };
+
     return (
         <ExpenseContext.Provider value={{
             expenses: visibleExpenses,
             loading,
             addExpense,
             removeExpense,
-            updateExpense
+            updateExpense,
+            reorderExpenses
         }}>
             {children}
         </ExpenseContext.Provider>
