@@ -102,67 +102,67 @@ export default function AdminDashboard() {
                 <div className="grid grid-cols-2 gap-4">
                     <Card className="relative overflow-hidden bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm p-4 rounded-2xl">
                         <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-purple-500/12"></div>
-                        <div className="flex items-center justify-between relative z-10">
-                            <div>
-                                <p className="text-xs text-white/70 mb-1 font-semibold">Всего пользователей</p>
+                        <div className="relative z-10">
+                            <p className="text-xs text-white/70 mb-1 font-semibold">Всего пользователей</p>
+                            <div className="flex items-end justify-between">
                                 <p className="text-2xl font-bold text-purple-400">{adminStats?.totalUsers || 0}</p>
+                                <Users className="w-8 h-8 text-purple-400 opacity-80 flex-shrink-0" />
                             </div>
-                            <Users className="w-8 h-8 text-purple-400 opacity-80" />
                         </div>
                     </Card>
 
                     <Card className="relative overflow-hidden bg-purple-500/10 border border-purple-500/30 backdrop-blur-sm p-4 rounded-2xl">
                         <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-purple-500/12"></div>
-                        <div className="flex items-center justify-between relative z-10">
-                            <div>
-                                <p className="text-xs text-white/70 mb-1 font-semibold">Активные (7 дней)</p>
+                        <div className="relative z-10">
+                            <p className="text-xs text-white/70 mb-1 font-semibold">Активные (7 дней)</p>
+                            <div className="flex items-end justify-between">
                                 <p className="text-2xl font-bold text-purple-400">{adminStats?.activeUsers || 0}</p>
+                                <UserCheck className="w-8 h-8 text-purple-400 opacity-80 flex-shrink-0" />
                             </div>
-                            <UserCheck className="w-8 h-8 text-purple-400 opacity-80" />
                         </div>
                     </Card>
 
                     <Card className="relative overflow-hidden bg-black/50 border border-white/10 backdrop-blur-sm p-4 rounded-2xl">
                         <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/8"></div>
-                        <div className="flex items-center justify-between relative z-10">
-                            <div>
-                                <p className="text-xs text-white/70 mb-1 font-semibold">Неактивные</p>
+                        <div className="relative z-10">
+                            <p className="text-xs text-white/70 mb-1 font-semibold">Неактивные</p>
+                            <div className="flex items-end justify-between">
                                 <p className="text-2xl font-bold text-white/70">{adminStats?.inactiveUsers || 0}</p>
+                                <UserX className="w-8 h-8 text-white/50 flex-shrink-0" />
                             </div>
-                            <UserX className="w-8 h-8 text-white/50" />
                         </div>
                     </Card>
 
                     <Card className="relative overflow-hidden bg-orange-500/10 border border-orange-500/30 backdrop-blur-sm p-4 rounded-2xl">
                         <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-orange-500/12"></div>
-                        <div className="flex items-center justify-between relative z-10">
-                            <div>
-                                <p className="text-xs text-white/70 mb-1 font-semibold">Новые (7 дней)</p>
+                        <div className="relative z-10">
+                            <p className="text-xs text-white/70 mb-1 font-semibold">Новые (7 дней)</p>
+                            <div className="flex items-end justify-between">
                                 <p className="text-2xl font-bold text-orange-400">{adminStats?.newUsersLast7Days || 0}</p>
+                                <TrendingUp className="w-8 h-8 text-orange-400 opacity-80 flex-shrink-0" />
                             </div>
-                            <TrendingUp className="w-8 h-8 text-orange-400 opacity-80" />
                         </div>
                     </Card>
 
                     <Card className="relative overflow-hidden bg-black/50 border border-white/10 backdrop-blur-sm p-4 rounded-2xl">
                         <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/8"></div>
-                        <div className="flex items-center justify-between relative z-10">
-                            <div>
-                                <p className="text-xs text-white/70 mb-1 font-semibold">Всего подписок</p>
+                        <div className="relative z-10">
+                            <p className="text-xs text-white/70 mb-1 font-semibold">Всего подписок</p>
+                            <div className="flex items-end justify-between">
                                 <p className="text-2xl font-bold text-white">{adminStats?.totalSubscriptions || 0}</p>
+                                <CreditCard className="w-8 h-8 text-white/80 flex-shrink-0" />
                             </div>
-                            <CreditCard className="w-8 h-8 text-white/80" />
                         </div>
                     </Card>
 
                     <Card className="relative overflow-hidden bg-black/50 border border-white/10 backdrop-blur-sm p-4 rounded-2xl">
                         <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/8"></div>
-                        <div className="flex items-center justify-between relative z-10">
-                            <div>
-                                <p className="text-xs text-white/70 mb-1 font-semibold">Среднее на пользователя</p>
+                        <div className="relative z-10">
+                            <p className="text-xs text-white/70 mb-1 font-semibold">Среднее на пользователя</p>
+                            <div className="flex items-end justify-between">
                                 <p className="text-2xl font-bold text-white">{adminStats?.averageSubscriptionsPerUser || 0}</p>
+                                <Folder className="w-8 h-8 text-white/80 flex-shrink-0" />
                             </div>
-                            <Folder className="w-8 h-8 text-white/80" />
                         </div>
                     </Card>
                 </div>

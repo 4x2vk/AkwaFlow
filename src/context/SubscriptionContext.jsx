@@ -106,6 +106,19 @@ export function SubscriptionProvider({ children }) {
                     subs.push({ id: doc.id, ...processedData });
                 });
                 
+                // Sort by order field, then by createdAt if order is missing
+                subs.sort((a, b) => {
+                    const aOrder = a.order !== undefined ? a.order : Infinity;
+                    const bOrder = b.order !== undefined ? b.order : Infinity;
+                    if (aOrder !== bOrder) {
+                        return aOrder - bOrder;
+                    }
+                    // If order is the same or missing, sort by createdAt
+                    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                    return bTime - aTime;
+                });
+                
                 console.log('[SUBSCRIPTIONS] ✅ Received update from Firebase:', subs.length, 'subscriptions');
                 console.log('[SUBSCRIPTIONS] Subscriptions array:', subs);
                 setSubscriptions(subs);
@@ -122,6 +135,16 @@ export function SubscriptionProvider({ children }) {
                 const cats = [];
                 querySnapshot.forEach((doc) => {
                     cats.push({ id: doc.id, ...doc.data() });
+                });
+                // Sort by order field, then by name if order is missing
+                cats.sort((a, b) => {
+                    const aOrder = a.order !== undefined ? a.order : Infinity;
+                    const bOrder = b.order !== undefined ? b.order : Infinity;
+                    if (aOrder !== bOrder) {
+                        return aOrder - bOrder;
+                    }
+                    // If order is the same or missing, sort by name
+                    return (a.name || '').localeCompare(b.name || '');
                 });
                 setCategories(cats);
                 // Don't set loading to false here, let subscriptions handle it
@@ -145,7 +168,15 @@ export function SubscriptionProvider({ children }) {
 
     const addSubscription = async (sub) => {
         if (!user || user.uid === 'demo_user') {
-            const newSub = { ...sub, id: Date.now().toString() };
+            const maxOrder = subscriptions.length > 0 
+                ? Math.max(...subscriptions.map(s => s.order || 0))
+                : -1;
+            const newSub = { 
+                ...sub, 
+                id: Date.now().toString(),
+                order: maxOrder + 1,
+                createdAt: new Date().toISOString()
+            };
             setSubscriptions([...subscriptions, newSub]);
             return;
         }
@@ -154,9 +185,15 @@ export function SubscriptionProvider({ children }) {
             console.log('[SUBSCRIPTIONS] Adding subscription for user:', user.uid);
             // Не логируем полные данные для безопасности
             
-            // Add createdAt timestamp like in bot
+            // Get max order from current subscriptions
+            const maxOrder = subscriptions.length > 0 
+                ? Math.max(...subscriptions.map(s => s.order || 0))
+                : -1;
+            
+            // Add createdAt timestamp and order like in bot
             const subscriptionData = {
                 ...sub,
+                order: maxOrder + 1,
                 createdAt: new Date().toISOString()
             };
             
@@ -206,11 +243,20 @@ export function SubscriptionProvider({ children }) {
 
     const addCategory = async (cat) => {
         if (!user || user.uid === 'demo_user') {
-            const newCat = { ...cat, id: Date.now().toString() };
+            const maxOrder = categories.length > 0 
+                ? Math.max(...categories.map(c => c.order || 0))
+                : -1;
+            const newCat = { ...cat, id: Date.now().toString(), order: maxOrder + 1 };
             setCategories([...categories, newCat]);
             return;
         }
-        await addDoc(collection(db, 'users', user.uid, 'categories'), cat);
+        const maxOrder = categories.length > 0 
+            ? Math.max(...categories.map(c => c.order || 0))
+            : -1;
+        await addDoc(collection(db, 'users', user.uid, 'categories'), {
+            ...cat,
+            order: maxOrder + 1
+        });
     };
 
     const removeCategory = async (id) => {
@@ -246,6 +292,98 @@ export function SubscriptionProvider({ children }) {
         } catch (error) {
             console.error('[SUBSCRIPTIONS] Error updating subscription:', error.code || 'UNKNOWN');
             alert('Ошибка при обновлении подписки');
+        }
+    };
+
+    const reorderSubscriptions = async (oldIndex, newIndex) => {
+        if (oldIndex === newIndex) return;
+        
+        const sortedSubs = [...subscriptions].sort((a, b) => {
+            const aOrder = a.order !== undefined ? a.order : Infinity;
+            const bOrder = b.order !== undefined ? b.order : Infinity;
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
+            }
+            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return bTime - aTime;
+        });
+        
+        const [movedItem] = sortedSubs.splice(oldIndex, 1);
+        sortedSubs.splice(newIndex, 0, movedItem);
+        
+        // Update orders
+        const updates = sortedSubs.map((sub, index) => ({
+            id: sub.id,
+            order: index
+        }));
+        
+        if (!user || user.uid === 'demo_user') {
+            // Update local state
+            const updatedSubs = subscriptions.map(sub => {
+                const update = updates.find(u => u.id === sub.id);
+                return update ? { ...sub, order: update.order } : sub;
+            });
+            setSubscriptions(updatedSubs);
+            return;
+        }
+        
+        // Update Firestore in batch
+        try {
+            const batch = writeBatch(db);
+            updates.forEach(({ id, order }) => {
+                const subRef = doc(db, 'users', user.uid, 'subscriptions', id);
+                batch.update(subRef, { order });
+            });
+            await batch.commit();
+        } catch (error) {
+            console.error('[SUBSCRIPTIONS] Error reordering subscriptions:', error);
+            alert('Ошибка при изменении порядка подписок');
+        }
+    };
+
+    const reorderCategories = async (oldIndex, newIndex) => {
+        if (oldIndex === newIndex) return;
+        
+        const sortedCats = [...categories].sort((a, b) => {
+            const aOrder = a.order !== undefined ? a.order : Infinity;
+            const bOrder = b.order !== undefined ? b.order : Infinity;
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
+            }
+            return (a.name || '').localeCompare(b.name || '');
+        });
+        
+        const [movedItem] = sortedCats.splice(oldIndex, 1);
+        sortedCats.splice(newIndex, 0, movedItem);
+        
+        // Update orders
+        const updates = sortedCats.map((cat, index) => ({
+            id: cat.id,
+            order: index
+        }));
+        
+        if (!user || user.uid === 'demo_user') {
+            // Update local state
+            const updatedCats = categories.map(cat => {
+                const update = updates.find(u => u.id === cat.id);
+                return update ? { ...cat, order: update.order } : cat;
+            });
+            setCategories(updatedCats);
+            return;
+        }
+        
+        // Update Firestore in batch
+        try {
+            const batch = writeBatch(db);
+            updates.forEach(({ id, order }) => {
+                const catRef = doc(db, 'users', user.uid, 'categories', id);
+                batch.update(catRef, { order });
+            });
+            await batch.commit();
+        } catch (error) {
+            console.error('[SUBSCRIPTIONS] Error reordering categories:', error);
+            alert('Ошибка при изменении порядка категорий');
         }
     };
 
@@ -315,7 +453,9 @@ export function SubscriptionProvider({ children }) {
             addCategory,
             removeCategory,
             updateSubscription,
-            updateCategory
+            updateCategory,
+            reorderSubscriptions,
+            reorderCategories
         }}>
             {children}
         </SubscriptionContext.Provider>

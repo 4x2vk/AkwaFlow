@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Trash2, GripVertical } from 'lucide-react';
 import { Card } from '../ui/Card';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // Function to determine if a color is light (needs dark text)
 function isLightColor(hexColor) {
@@ -13,8 +15,24 @@ function isLightColor(hexColor) {
     return luminance > 0.5;
 }
 
-export function ExpenseItem({ icon, iconUrl, title, amount, currencySymbol, spentAt, category, color, note, onDelete, onClick }) {
+export function ExpenseItem({ id, icon, iconUrl, title, amount, currencySymbol, spentAt, category, color, note, onDelete, onClick }) {
     const [failedIconUrl, setFailedIconUrl] = useState(null);
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging
+    } = useSortable({ id });
+    
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition: isDragging ? 'none' : transition || 'transform 200ms ease',
+        opacity: isDragging ? 0.6 : 1,
+        scale: isDragging ? 1.02 : 1
+    };
+    
     const displayCurrency = currencySymbol || '₩';
     const displayDate = spentAt ? new Date(spentAt).toLocaleDateString('ru-RU') : '';
     const bgColor = color || '#6B7280';
@@ -24,6 +42,8 @@ export function ExpenseItem({ icon, iconUrl, title, amount, currencySymbol, spen
 
     return (
         <Card
+            ref={setNodeRef}
+            style={style}
             onClick={onClick}
             className="relative overflow-hidden flex items-center justify-between p-4 mb-3 border-white/10 bg-black/40 hover:bg-black/50 backdrop-blur-sm transition-all cursor-pointer rounded-2xl group"
         >
@@ -31,7 +51,17 @@ export function ExpenseItem({ icon, iconUrl, title, amount, currencySymbol, spen
             <div className="absolute -bottom-4 -left-4 w-20 h-20 rounded-full bg-white/6"></div>
             <div className="absolute top-1/3 right-0 w-16 h-16 rounded-full bg-white/4"></div>
             
-            <div className="flex items-center gap-4 min-w-0 relative z-10">
+            {/* Drag handle */}
+            <div
+                {...attributes}
+                {...listeners}
+                className="cursor-grab active:cursor-grabbing p-2 -ml-2 mr-2 text-white/30 hover:text-white/60 transition-colors relative z-10"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <GripVertical className="w-5 h-5" />
+            </div>
+            
+            <div className="flex items-center gap-4 min-w-0 relative z-10 flex-1">
                 <div
                     className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold ${textColorClass} shadow-lg overflow-hidden flex-shrink-0 transition-transform group-hover:scale-105`}
                     style={{ backgroundColor: bgColor }}

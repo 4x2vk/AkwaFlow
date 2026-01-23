@@ -6,11 +6,78 @@ import { Button } from '../components/ui/Button';
 import { AddIncomeModal } from '../components/features/AddIncomeModal';
 import { IncomeItem } from '../components/features/IncomeItem';
 import { useIncomes } from '../context/IncomeContext';
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+} from '@dnd-kit/core';
+import {
+    SortableContext,
+    sortableKeyboardCoordinates,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+
+// Custom modifier to restrict movement to vertical axis only
+const restrictToVerticalAxis = ({ transform }) => {
+    return {
+        ...transform,
+        x: 0,
+    };
+};
+
+// Custom modifier to restrict movement within parent container
+const restrictToParentElement = ({ transform, draggingNodeRect, containerNodeRect, windowRect }) => {
+    if (!draggingNodeRect) {
+        return transform;
+    }
+    
+    // If we have container bounds, use them
+    if (containerNodeRect) {
+        const minY = 0;
+        const maxY = containerNodeRect.height - draggingNodeRect.height;
+        return {
+            ...transform,
+            y: Math.max(minY, Math.min(maxY, transform.y)),
+            x: 0,
+        };
+    }
+    
+    // Otherwise just restrict horizontal movement
+    return {
+        ...transform,
+        x: 0,
+    };
+};
 
 export default function Incomes() {
-    const { incomes, loading, removeIncome } = useIncomes();
+    const { incomes, loading, removeIncome, reorderIncomes } = useIncomes();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingIncome, setEditingIncome] = useState(null);
+    
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+    
+    const handleDragEnd = (event) => {
+        const { active, over } = event;
+        
+        if (over && active.id !== over.id) {
+            const oldIndex = incomes.findIndex((income) => income.id === active.id);
+            const newIndex = incomes.findIndex((income) => income.id === over.id);
+            
+            reorderIncomes(oldIndex, newIndex);
+        }
+    };
 
     const now = useMemo(() => new Date(), []);
     const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -119,15 +186,26 @@ export default function Incomes() {
                             Загрузка...
                         </div>
                     ) : (
-                        <>
-                            {incomes.map((e) => (
-                                <IncomeItem
-                                    key={e.id}
-                                    {...e}
-                                    onDelete={() => removeIncome(e.id)}
-                                    onClick={() => handleEdit(e)}
-                                />
-                            ))}
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEnd}
+                            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+                        >
+                            <SortableContext
+                                items={incomes.map(e => e.id)}
+                                strategy={verticalListSortingStrategy}
+                            >
+                                {incomes.map((e) => (
+                                    <IncomeItem
+                                        key={e.id}
+                                        id={e.id}
+                                        {...e}
+                                        onDelete={() => removeIncome(e.id)}
+                                        onClick={() => handleEdit(e)}
+                                    />
+                                ))}
+                            </SortableContext>
                             {incomes.length === 0 && (
                                 <Card className="bg-surface border-white/5 p-6 text-center">
                                     <div className="text-text-secondary">
@@ -135,7 +213,7 @@ export default function Incomes() {
                                     </div>
                                 </Card>
                             )}
-                        </>
+                        </DndContext>
                     )}
                 </div>
             </div>
