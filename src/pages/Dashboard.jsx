@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Calendar, CreditCard, TrendingUp } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
@@ -7,79 +7,38 @@ import { SubscriptionItem } from '../components/features/SubscriptionItem';
 import { useSubscriptions } from '../context/SubscriptionContext';
 import { AddSubscriptionModal } from '../components/features/AddSubscriptionModal';
 import { getIcon } from '../services/iconService';
-import {
-    DndContext,
-    closestCenter,
-    KeyboardSensor,
-    PointerSensor,
-    useSensor,
-    useSensors,
-} from '@dnd-kit/core';
-import {
-    SortableContext,
-    sortableKeyboardCoordinates,
-    verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-
-// Custom modifier to restrict movement to vertical axis only
-const restrictToVerticalAxis = ({ transform }) => {
-    return {
-        ...transform,
-        x: 0,
-    };
-};
-
-// Custom modifier to restrict movement within parent container
-const restrictToParentElement = ({ transform, draggingNodeRect, containerNodeRect, windowRect }) => {
-    if (!draggingNodeRect) {
-        return transform;
-    }
-    
-    // If we have container bounds, use them
-    if (containerNodeRect) {
-        const minY = 0;
-        const maxY = containerNodeRect.height - draggingNodeRect.height;
-        return {
-            ...transform,
-            y: Math.max(minY, Math.min(maxY, transform.y)),
-            x: 0,
-        };
-    }
-    
-    // Otherwise just restrict horizontal movement
-    return {
-        ...transform,
-        x: 0,
-    };
-};
 
 export default function Dashboard() {
     const { subscriptions, removeSubscription, updateSubscription, reorderSubscriptions, loading } = useSubscriptions();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSubscription, setEditingSubscription] = useState(null);
     
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
-    );
-    
     console.log('[DASHBOARD] Render - subscriptions:', subscriptions.length, 'loading:', loading);
     
-    const handleDragEnd = (event) => {
-        const { active, over } = event;
-        
-        if (over && active.id !== over.id) {
-            const oldIndex = subscriptions.findIndex((sub) => sub.id === active.id);
-            const newIndex = subscriptions.findIndex((sub) => sub.id === over.id);
-            
-            reorderSubscriptions(oldIndex, newIndex);
-        }
+    // Sort subscriptions by order
+    const sortedSubscriptions = useMemo(() => {
+        return [...subscriptions].sort((a, b) => {
+            const aOrder = a.order !== undefined ? a.order : Infinity;
+            const bOrder = b.order !== undefined ? b.order : Infinity;
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
+            }
+            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return bTime - aTime;
+        });
+    }, [subscriptions]);
+    
+    const handleMoveUp = (index) => {
+        if (index === 0) return;
+        // Move to top (index 0)
+        reorderSubscriptions(index, 0);
+    };
+    
+    const handleMoveDown = (index) => {
+        if (index >= sortedSubscriptions.length - 1) return;
+        // Move down one position
+        reorderSubscriptions(index, index + 1);
     };
 
     // Автоматически обновляем иконки для подписок без иконок
@@ -231,32 +190,26 @@ export default function Dashboard() {
                                 Загрузка...
                             </div>
                         ) : (
-                            <DndContext
-                                sensors={sensors}
-                                collisionDetection={closestCenter}
-                                onDragEnd={handleDragEnd}
-                                modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-                            >
-                                <SortableContext
-                                    items={subscriptions.map(sub => sub.id)}
-                                    strategy={verticalListSortingStrategy}
-                                >
-                                    {subscriptions.map(sub => (
-                                        <SubscriptionItem
-                                            key={sub.id}
-                                            id={sub.id}
-                                            {...sub}
-                                            onDelete={() => removeSubscription(sub.id)}
-                                            onClick={() => handleEdit(sub)}
-                                        />
-                                    ))}
-                                </SortableContext>
-                                {subscriptions.length === 0 && (
+                            <>
+                                {sortedSubscriptions.map((sub, index) => (
+                                    <SubscriptionItem
+                                        key={sub.id}
+                                        id={sub.id}
+                                        {...sub}
+                                        index={index}
+                                        totalItems={sortedSubscriptions.length}
+                                        onDelete={() => removeSubscription(sub.id)}
+                                        onClick={() => handleEdit(sub)}
+                                        onMoveUp={() => handleMoveUp(index)}
+                                        onMoveDown={() => handleMoveDown(index)}
+                                    />
+                                ))}
+                                {sortedSubscriptions.length === 0 && (
                                     <div className="text-center text-text-secondary py-8">
                                         Нет подписок
                                     </div>
                                 )}
-                            </DndContext>
+                            </>
                         )}
                     </div>
                 </div>
