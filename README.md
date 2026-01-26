@@ -214,20 +214,4 @@ This project is open source and available under the MIT License.
 
 ---
 
-## Changelog
-
-### v1.1.0
-
-Added expense tracking feature. You can now track one-time expenses alongside subscriptions, with the same category system and multi-currency support.
-
-Redesigned the UI with rounded cards and decorative circular elements inside. Purple theme for subscriptions, orange for expenses. Updated icons — changed expenses icon from wallet to receipt for better clarity.
-
-Improved the icon system to handle Cyrillic names better. Enhanced analytics to show separate tracking for subscriptions and expenses.
-
-### v1.0.0
-
-Initial release with subscription management, category system, basic analytics, and Telegram bot integration.
-
----
-
 *I built this because I needed it. Simple as that. If you find it useful, great! If you have suggestions, even better. If you just want to see how it works, feel free to poke around the code.*
