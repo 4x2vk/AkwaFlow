@@ -6,77 +6,36 @@ import { Button } from '../components/ui/Button';
 import { AddExpenseModal } from '../components/features/AddExpenseModal';
 import { ExpenseItem } from '../components/features/ExpenseItem';
 import { useExpenses } from '../context/ExpenseContext';
-import {
-    DndContext,
-    closestCenter,
-    KeyboardSensor,
-    PointerSensor,
-    useSensor,
-    useSensors,
-} from '@dnd-kit/core';
-import {
-    SortableContext,
-    sortableKeyboardCoordinates,
-    verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-
-// Custom modifier to restrict movement to vertical axis only
-const restrictToVerticalAxis = ({ transform }) => {
-    return {
-        ...transform,
-        x: 0,
-    };
-};
-
-// Custom modifier to restrict movement within parent container
-const restrictToParentElement = ({ transform, draggingNodeRect, containerNodeRect, windowRect }) => {
-    if (!draggingNodeRect) {
-        return transform;
-    }
-    
-    // If we have container bounds, use them
-    if (containerNodeRect) {
-        const minY = 0;
-        const maxY = containerNodeRect.height - draggingNodeRect.height;
-        return {
-            ...transform,
-            y: Math.max(minY, Math.min(maxY, transform.y)),
-            x: 0,
-        };
-    }
-    
-    // Otherwise just restrict horizontal movement
-    return {
-        ...transform,
-        x: 0,
-    };
-};
 
 export default function Expenses() {
     const { expenses, loading, removeExpense, reorderExpenses } = useExpenses();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingExpense, setEditingExpense] = useState(null);
     
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
-    );
+    // Sort expenses by order
+    const sortedExpenses = useMemo(() => {
+        return [...expenses].sort((a, b) => {
+            const aOrder = a.order !== undefined ? a.order : Infinity;
+            const bOrder = b.order !== undefined ? b.order : Infinity;
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
+            }
+            const aTime = new Date(a.spentAt || a.createdAt || 0).getTime();
+            const bTime = new Date(b.spentAt || b.createdAt || 0).getTime();
+            return bTime - aTime;
+        });
+    }, [expenses]);
     
-    const handleDragEnd = (event) => {
-        const { active, over } = event;
-        
-        if (over && active.id !== over.id) {
-            const oldIndex = expenses.findIndex((expense) => expense.id === active.id);
-            const newIndex = expenses.findIndex((expense) => expense.id === over.id);
-            
-            reorderExpenses(oldIndex, newIndex);
-        }
+    const handleMoveUp = (index) => {
+        if (index === 0) return;
+        // Move to top (index 0)
+        reorderExpenses(index, 0);
+    };
+    
+    const handleMoveDown = (index) => {
+        if (index >= sortedExpenses.length - 1) return;
+        // Move down one position
+        reorderExpenses(index, index + 1);
     };
 
     const now = useMemo(() => new Date(), []);
@@ -189,34 +148,28 @@ export default function Expenses() {
                             Загрузка...
                         </div>
                     ) : (
-                        <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCenter}
-                            onDragEnd={handleDragEnd}
-                            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-                        >
-                            <SortableContext
-                                items={expenses.map(e => e.id)}
-                                strategy={verticalListSortingStrategy}
-                            >
-                                {expenses.map((e) => (
-                                    <ExpenseItem
-                                        key={e.id}
-                                        id={e.id}
-                                        {...e}
-                                        onDelete={() => removeExpense(e.id)}
-                                        onClick={() => handleEdit(e)}
-                                    />
-                                ))}
-                            </SortableContext>
-                            {expenses.length === 0 && (
+                        <>
+                            {sortedExpenses.map((e, index) => (
+                                <ExpenseItem
+                                    key={e.id}
+                                    id={e.id}
+                                    {...e}
+                                    index={index}
+                                    totalItems={sortedExpenses.length}
+                                    onDelete={() => removeExpense(e.id)}
+                                    onClick={() => handleEdit(e)}
+                                    onMoveUp={() => handleMoveUp(index)}
+                                    onMoveDown={() => handleMoveDown(index)}
+                                />
+                            ))}
+                            {sortedExpenses.length === 0 && (
                                 <Card className="bg-surface border-white/5 p-6 text-center">
                                     <div className="text-text-secondary">
                                         Пока нет расходов. Добавьте первый расход, чтобы сравнивать траты по месяцам.
                                     </div>
                                 </Card>
                             )}
-                        </DndContext>
+                        </>
                     )}
                 </div>
             </div>

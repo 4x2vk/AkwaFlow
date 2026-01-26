@@ -6,77 +6,36 @@ import { Button } from '../components/ui/Button';
 import { AddIncomeModal } from '../components/features/AddIncomeModal';
 import { IncomeItem } from '../components/features/IncomeItem';
 import { useIncomes } from '../context/IncomeContext';
-import {
-    DndContext,
-    closestCenter,
-    KeyboardSensor,
-    PointerSensor,
-    useSensor,
-    useSensors,
-} from '@dnd-kit/core';
-import {
-    SortableContext,
-    sortableKeyboardCoordinates,
-    verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-
-// Custom modifier to restrict movement to vertical axis only
-const restrictToVerticalAxis = ({ transform }) => {
-    return {
-        ...transform,
-        x: 0,
-    };
-};
-
-// Custom modifier to restrict movement within parent container
-const restrictToParentElement = ({ transform, draggingNodeRect, containerNodeRect, windowRect }) => {
-    if (!draggingNodeRect) {
-        return transform;
-    }
-    
-    // If we have container bounds, use them
-    if (containerNodeRect) {
-        const minY = 0;
-        const maxY = containerNodeRect.height - draggingNodeRect.height;
-        return {
-            ...transform,
-            y: Math.max(minY, Math.min(maxY, transform.y)),
-            x: 0,
-        };
-    }
-    
-    // Otherwise just restrict horizontal movement
-    return {
-        ...transform,
-        x: 0,
-    };
-};
 
 export default function Incomes() {
     const { incomes, loading, removeIncome, reorderIncomes } = useIncomes();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingIncome, setEditingIncome] = useState(null);
     
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
-    );
+    // Sort incomes by order
+    const sortedIncomes = useMemo(() => {
+        return [...incomes].sort((a, b) => {
+            const aOrder = a.order !== undefined ? a.order : Infinity;
+            const bOrder = b.order !== undefined ? b.order : Infinity;
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
+            }
+            const aTime = new Date(a.receivedAt || a.createdAt || 0).getTime();
+            const bTime = new Date(b.receivedAt || b.createdAt || 0).getTime();
+            return bTime - aTime;
+        });
+    }, [incomes]);
     
-    const handleDragEnd = (event) => {
-        const { active, over } = event;
-        
-        if (over && active.id !== over.id) {
-            const oldIndex = incomes.findIndex((income) => income.id === active.id);
-            const newIndex = incomes.findIndex((income) => income.id === over.id);
-            
-            reorderIncomes(oldIndex, newIndex);
-        }
+    const handleMoveUp = (index) => {
+        if (index === 0) return;
+        // Move to top (index 0)
+        reorderIncomes(index, 0);
+    };
+    
+    const handleMoveDown = (index) => {
+        if (index >= sortedIncomes.length - 1) return;
+        // Move down one position
+        reorderIncomes(index, index + 1);
     };
 
     const now = useMemo(() => new Date(), []);
@@ -186,34 +145,28 @@ export default function Incomes() {
                             Загрузка...
                         </div>
                     ) : (
-                        <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCenter}
-                            onDragEnd={handleDragEnd}
-                            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-                        >
-                            <SortableContext
-                                items={incomes.map(e => e.id)}
-                                strategy={verticalListSortingStrategy}
-                            >
-                                {incomes.map((e) => (
-                                    <IncomeItem
-                                        key={e.id}
-                                        id={e.id}
-                                        {...e}
-                                        onDelete={() => removeIncome(e.id)}
-                                        onClick={() => handleEdit(e)}
-                                    />
-                                ))}
-                            </SortableContext>
-                            {incomes.length === 0 && (
+                        <>
+                            {sortedIncomes.map((e, index) => (
+                                <IncomeItem
+                                    key={e.id}
+                                    id={e.id}
+                                    {...e}
+                                    index={index}
+                                    totalItems={sortedIncomes.length}
+                                    onDelete={() => removeIncome(e.id)}
+                                    onClick={() => handleEdit(e)}
+                                    onMoveUp={() => handleMoveUp(index)}
+                                    onMoveDown={() => handleMoveDown(index)}
+                                />
+                            ))}
+                            {sortedIncomes.length === 0 && (
                                 <Card className="bg-surface border-white/5 p-6 text-center">
                                     <div className="text-text-secondary">
                                         Пока нет доходов. Добавьте первый доход, чтобы видеть баланс в аналитике.
                                     </div>
                                 </Card>
                             )}
-                        </DndContext>
+                        </>
                     )}
                 </div>
             </div>
