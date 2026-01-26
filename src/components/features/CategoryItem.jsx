@@ -1,8 +1,6 @@
 import React from 'react';
-import { Trash2, GripVertical } from 'lucide-react';
+import { Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { Card } from '../ui/Card';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 
 export function CategoryItem({ 
     id, 
@@ -15,28 +13,15 @@ export function CategoryItem({
     incomeByCurrency, 
     isDefault, 
     onDelete, 
-    onClick 
+    onClick,
+    onMoveUp,
+    onMoveDown,
+    index,
+    totalItems
 }) {
-    const {
-        attributes,
-        listeners,
-        setNodeRef,
-        transform,
-        transition,
-        isDragging
-    } = useSortable({ id });
-    
-    const style = {
-        transform: CSS.Transform.toString(transform),
-        transition: isDragging ? 'none' : transition || 'transform 200ms ease',
-        opacity: isDragging ? 0.6 : 1,
-        scale: isDragging ? 1.02 : 1
-    };
     
     return (
         <Card
-            ref={setNodeRef}
-            style={style}
             onClick={onClick}
             className={`relative overflow-hidden flex items-center justify-between p-4 border-white/10 bg-black/40 hover:bg-black/50 backdrop-blur-sm transition-all rounded-2xl group ${!isDefault ? 'cursor-pointer' : ''}`}
         >
@@ -44,15 +29,31 @@ export function CategoryItem({
             <div className="absolute -bottom-4 -left-4 w-20 h-20 rounded-full bg-white/6"></div>
             <div className="absolute top-1/3 right-0 w-16 h-16 rounded-full bg-white/4"></div>
             
-            {/* Drag handle */}
+            {/* Move buttons */}
             {!isDefault && (
-                <div
-                    {...attributes}
-                    {...listeners}
-                    className="cursor-grab active:cursor-grabbing p-2 -ml-2 mr-2 text-white/30 hover:text-white/60 transition-colors relative z-10"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <GripVertical className="w-5 h-5" />
+                <div className="flex flex-col gap-1 p-1 -ml-2 mr-2 relative z-10" onClick={(e) => e.stopPropagation()}>
+                    <button
+                        className="text-white/30 hover:text-white/80 transition-colors disabled:text-white/10 disabled:cursor-not-allowed"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (onMoveUp) onMoveUp();
+                        }}
+                        disabled={index === 0}
+                        title="Переместить вверх"
+                    >
+                        <ChevronUp className="w-4 h-4" />
+                    </button>
+                    <button
+                        className="text-white/30 hover:text-white/80 transition-colors disabled:text-white/10 disabled:cursor-not-allowed"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (onMoveDown) onMoveDown();
+                        }}
+                        disabled={index === totalItems - 1}
+                        title="Переместить вниз"
+                    >
+                        <ChevronDown className="w-4 h-4" />
+                    </button>
                 </div>
             )}
             

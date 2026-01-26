@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Plus, Trash2, Edit2 } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
@@ -8,51 +8,6 @@ import { CategoryModal } from '../components/features/CategoryModal';
 import { CategoryItem } from '../components/features/CategoryItem';
 import { useExpenses } from '../context/ExpenseContext';
 import { useIncomes } from '../context/IncomeContext';
-import {
-    DndContext,
-    closestCenter,
-    KeyboardSensor,
-    PointerSensor,
-    useSensor,
-    useSensors,
-} from '@dnd-kit/core';
-import {
-    SortableContext,
-    sortableKeyboardCoordinates,
-    verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-
-// Custom modifier to restrict movement to vertical axis only
-const restrictToVerticalAxis = ({ transform }) => {
-    return {
-        ...transform,
-        x: 0,
-    };
-};
-
-// Custom modifier to restrict movement within parent container
-const restrictToParentElement = ({ transform, draggingNodeRect, containerNodeRect, windowRect }) => {
-    if (!draggingNodeRect) {
-        return transform;
-    }
-    
-    // If we have container bounds, use them
-    if (containerNodeRect) {
-        const minY = 0;
-        const maxY = containerNodeRect.height - draggingNodeRect.height;
-        return {
-            ...transform,
-            y: Math.max(minY, Math.min(maxY, transform.y)),
-            x: 0,
-        };
-    }
-    
-    // Otherwise just restrict horizontal movement
-    return {
-        ...transform,
-        x: 0,
-    };
-};
 
 export default function Categories() {
     const { subscriptions, categories: userCategories, removeSubscription, removeCategory, reorderCategories } = useSubscriptions();
@@ -60,66 +15,25 @@ export default function Categories() {
     const { incomes } = useIncomes();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCategory, setEditingCategory] = useState(null);
-    
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 8,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        })
-    );
-    
-    const handleDragEnd = (event) => {
-        const { active, over } = event;
-        
-        if (over && active.id !== over.id) {
-            // Only reorder user categories (filter out default ones)
-            const reorderableCategories = categoriesList.filter(cat => !cat.isDefault);
-            const oldIndex = reorderableCategories.findIndex((cat) => {
-                const catId = cat.id || cat.name;
-                return catId === active.id;
-            });
-            const newIndex = reorderableCategories.findIndex((cat) => {
-                const catId = cat.id || cat.name;
-                return catId === over.id;
-            });
-            
-            if (oldIndex !== -1 && newIndex !== -1) {
-                // Map to userCategories indices
-                const userCategoriesSorted = [...userCategories].sort((a, b) => {
-                    const aOrder = a.order !== undefined ? a.order : Infinity;
-                    const bOrder = b.order !== undefined ? b.order : Infinity;
-                    if (aOrder !== bOrder) {
-                        return aOrder - bOrder;
-                    }
-                    return (a.name || '').localeCompare(b.name || '');
-                });
-                
-                const userOldIndex = userCategoriesSorted.findIndex(cat => {
-                    const catId = cat.id || cat.name;
-                    return catId === active.id;
-                });
-                const userNewIndex = userCategoriesSorted.findIndex(cat => {
-                    const catId = cat.id || cat.name;
-                    return catId === over.id;
-                });
-                
-                if (userOldIndex !== -1 && userNewIndex !== -1) {
-                    reorderCategories(userOldIndex, userNewIndex);
-                }
+
+    // Sort user categories by order
+    const sortedUserCategories = useMemo(() => {
+        return [...userCategories].sort((a, b) => {
+            const aOrder = a.order !== undefined ? a.order : Infinity;
+            const bOrder = b.order !== undefined ? b.order : Infinity;
+            if (aOrder !== bOrder) {
+                return aOrder - bOrder;
             }
-        }
-    };
+            return (a.name || '').localeCompare(b.name || '');
+        });
+    }, [userCategories]);
 
     // Ensure "Общие" exists in the list for display if subscriptions use it, 
     // or if we want it as a default fallback.
     const hasGeneral = userCategories.some(c => c.name === 'Общие');
     const displayCategories = hasGeneral
-        ? userCategories
-        : [{ name: 'Общие', color: '#6B7280', id: 'general_default' }, ...userCategories];
+        ? sortedUserCategories
+        : [{ name: 'Общие', color: '#6B7280', id: 'general_default' }, ...sortedUserCategories];
 
     // Dedupe
     const uniqueCategories = displayCategories.filter((v, i, a) => a.findIndex(t => (t.name === v.name)) === i);
@@ -189,6 +103,37 @@ export default function Categories() {
         }
     };
 
+    // Get only user categories (non-default) for reordering
+    const userCategoriesInList = categoriesList.filter(cat => !cat.isDefault);
+    
+    const handleMoveUp = (index) => {
+        // Find the actual index in userCategoriesInList
+        const category = userCategoriesInList[index];
+        if (!category || index === 0) return;
+        
+        // Find the index in sortedUserCategories
+        const catId = category.id || category.name;
+        const oldIndex = sortedUserCategories.findIndex(c => (c.id || c.name) === catId);
+        if (oldIndex === -1 || oldIndex === 0) return;
+        
+        // Move to top (index 0)
+        reorderCategories(oldIndex, 0);
+    };
+    
+    const handleMoveDown = (index) => {
+        // Find the actual index in userCategoriesInList
+        const category = userCategoriesInList[index];
+        if (!category || index >= userCategoriesInList.length - 1) return;
+        
+        // Find the index in sortedUserCategories
+        const catId = category.id || category.name;
+        const oldIndex = sortedUserCategories.findIndex(c => (c.id || c.name) === catId);
+        if (oldIndex === -1 || oldIndex >= sortedUserCategories.length - 1) return;
+        
+        // Move down one position
+        reorderCategories(oldIndex, oldIndex + 1);
+    };
+
     return (
         <Layout>
             <div className="space-y-6">
@@ -206,37 +151,33 @@ export default function Categories() {
                             Нет категорий. Добавьте свою первую категорию!
                         </div>
                     ) : (
-                        <DndContext
-                            sensors={sensors}
-                            collisionDetection={closestCenter}
-                            onDragEnd={handleDragEnd}
-                            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-                        >
-                            <SortableContext
-                                items={categoriesList.map(cat => cat.id || cat.name)}
-                                strategy={verticalListSortingStrategy}
-                            >
-                                {categoriesList.map((cat) => {
-                                    const catId = cat.id || cat.name;
-                                    return (
-                                        <CategoryItem
-                                            key={catId}
-                                            id={catId}
-                                            name={cat.name}
-                                            color={cat.color}
-                                            subsCount={cat.subsCount}
-                                            expensesCount={cat.expensesCount}
-                                            incomesCount={cat.incomesCount}
-                                            spendByCurrency={cat.spendByCurrency}
-                                            incomeByCurrency={cat.incomeByCurrency}
-                                            isDefault={cat.isDefault}
-                                            onDelete={(e) => handleDeleteCategory(e, cat)}
-                                            onClick={() => handleEditCategory(cat)}
-                                        />
-                                    );
-                                })}
-                            </SortableContext>
-                        </DndContext>
+                        <>
+                            {categoriesList.map((cat, index) => {
+                                const catId = cat.id || cat.name;
+                                // Find index in userCategoriesInList for non-default categories
+                                const userCategoryIndex = cat.isDefault ? -1 : userCategoriesInList.findIndex(c => (c.id || c.name) === catId);
+                                return (
+                                    <CategoryItem
+                                        key={catId}
+                                        id={catId}
+                                        name={cat.name}
+                                        color={cat.color}
+                                        subsCount={cat.subsCount}
+                                        expensesCount={cat.expensesCount}
+                                        incomesCount={cat.incomesCount}
+                                        spendByCurrency={cat.spendByCurrency}
+                                        incomeByCurrency={cat.incomeByCurrency}
+                                        isDefault={cat.isDefault}
+                                        index={userCategoryIndex}
+                                        totalItems={userCategoriesInList.length}
+                                        onDelete={(e) => handleDeleteCategory(e, cat)}
+                                        onClick={() => handleEditCategory(cat)}
+                                        onMoveUp={() => handleMoveUp(userCategoryIndex)}
+                                        onMoveDown={() => handleMoveDown(userCategoryIndex)}
+                                    />
+                                );
+                            })}
+                        </>
                     )}
                 </div>
             </div>
