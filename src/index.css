@@ -22,6 +22,13 @@ body {
   min-height: 100vh;
 }
 
+/* Минимальный размер шрифта для форм, чтобы мобильный браузер не зумил страницу при вводе */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
