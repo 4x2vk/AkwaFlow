@@ -6,6 +6,7 @@ import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
 import { getIcon } from '../../services/iconService';
 import { validateAndSanitizeSubscription } from '../../lib/validation';
+import { CategoryModal } from './CategoryModal';
 
 export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
     const { addSubscription, updateSubscription, categories } = useSubscriptions();
@@ -54,8 +55,23 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
     }, [initialData]);
 
     const [formData, setFormData] = useState(() => initialFormData);
+    const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
     if (!isOpen) return null;
+
+    const handleCategoryChange = (e) => {
+        const value = e.target.value;
+
+        if (value === '__add_new__') {
+            if (!isCategoryModalOpen) {
+                setIsCategoryModalOpen(true);
+            }
+            // Не меняем выбранную категорию, пока пользователь не создаст новую
+            return;
+        }
+
+        setFormData({ ...formData, category: value });
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -162,11 +178,12 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
                         <select
                             className="flex h-12 w-full rounded-xl border border-white/10 bg-surface px-3 py-2 text-sm text-text ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                             value={formData.category}
-                            onChange={e => setFormData({ ...formData, category: e.target.value })}
+                            onChange={handleCategoryChange}
                         >
                             {uniqueCategories.map(cat => (
                                 <option key={cat.name} value={cat.name}>{cat.name}</option>
                             ))}
+                            <option value="__add_new__">+ Добавить категорию…</option>
                         </select>
                     </div>
 
@@ -230,6 +247,21 @@ export function AddSubscriptionModal({ isOpen, onClose, initialData = null }) {
                     </div>
                 </form>
             </Card>
+            {/* Модалка создания/редактирования категории, открываемая прямо из формы */}
+            <CategoryModal
+                isOpen={isCategoryModalOpen}
+                onClose={() => setIsCategoryModalOpen(false)}
+                initialData={null}
+                onSubmitDone={(newCategory) => {
+                    // После создания/обновления сразу выбираем категорию в форме
+                    if (newCategory?.name) {
+                        setFormData((prev) => ({
+                            ...prev,
+                            category: newCategory.name
+                        }));
+                    }
+                }}
+            />
         </div>
     );
 }
