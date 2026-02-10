@@ -5,7 +5,7 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
 
-export function CategoryModal({ isOpen, onClose, initialData = null }) {
+export function CategoryModal({ isOpen, onClose, initialData = null, onSubmitDone }) {
     const { addCategory, updateCategory } = useSubscriptions();
     const [formData, setFormData] = useState({
         name: '',
@@ -25,16 +25,31 @@ export function CategoryModal({ isOpen, onClose, initialData = null }) {
 
     if (!isOpen) return null;
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
-        if (initialData) {
-            updateCategory(initialData.id, formData);
-        } else {
-            addCategory(formData);
-        }
+        try {
+            if (initialData) {
+                await updateCategory(initialData.id, formData);
 
-        onClose();
+                if (onSubmitDone) {
+                    // Для обновления категории возвращаем приблизительные данные
+                    onSubmitDone({
+                        id: initialData.id,
+                        ...initialData,
+                        ...formData
+                    });
+                }
+            } else {
+                const createdCategory = await addCategory(formData);
+                
+                if (onSubmitDone && createdCategory) {
+                    onSubmitDone(createdCategory);
+                }
+            }
+        } finally {
+            onClose();
+        }
     };
 
     return (

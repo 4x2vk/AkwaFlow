@@ -248,15 +248,24 @@ export function SubscriptionProvider({ children }) {
                 : -1;
             const newCat = { ...cat, id: Date.now().toString(), order: maxOrder + 1 };
             setCategories([...categories, newCat]);
-            return;
+            return newCat;
         }
+
         const maxOrder = categories.length > 0 
             ? Math.max(...categories.map(c => c.order || 0))
             : -1;
-        await addDoc(collection(db, 'users', user.uid, 'categories'), {
+
+        const docRef = await addDoc(collection(db, 'users', user.uid, 'categories'), {
             ...cat,
             order: maxOrder + 1
         });
+
+        // Возвращаем созданную категорию, чтобы UI мог сразу выбрать её
+        return {
+            id: docRef.id,
+            ...cat,
+            order: maxOrder + 1
+        };
     };
 
     const removeCategory = async (id) => {
