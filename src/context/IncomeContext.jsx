@@ -39,6 +39,7 @@ export function IncomeProvider({ children }) {
             setLoadError(null);
         }, (error) => {
             console.error('[INCOMES] Snapshot error:', error);
+            setIncomes([]);
             setLoadedUid(user.uid);
             setLoadError(error);
         });
@@ -134,6 +135,7 @@ export function IncomeProvider({ children }) {
         <IncomeContext.Provider value={{
             incomes: visibleIncomes,
             loading,
+            loadError,
             addIncome,
             removeIncome,
             updateIncome,

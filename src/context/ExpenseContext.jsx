@@ -34,11 +34,15 @@ export function ExpenseProvider({ children }) {
                 mapSnapshotDocs(querySnapshot, ['createdAt', 'spentAt']),
                 ['spentAt', 'createdAt']
             );
+            if (import.meta.env.DEV) {
+                console.log('[EXPENSES] Loaded', items.length, 'for uid:', user.uid, 'path: users/' + user.uid + '/expenses');
+            }
             setExpenses(items);
             setLoadedUid(user.uid);
             setLoadError(null);
         }, (error) => {
             console.error('[EXPENSES] Snapshot error:', error);
+            setExpenses([]);
             setLoadedUid(user.uid);
             setLoadError(error);
         });
@@ -126,6 +130,7 @@ export function ExpenseProvider({ children }) {
         <ExpenseContext.Provider value={{
             expenses: visibleExpenses,
             loading,
+            loadError,
             addExpense,
             removeExpense,
             updateExpense,

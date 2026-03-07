@@ -1,6 +1,24 @@
-export function getMonthKey(dateValue) {
-    const date = new Date(dateValue);
+const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Returns "YYYY-MM" for the given date value. Uses local month.
+ * Date-only strings (YYYY-MM-DD) are parsed as local date to avoid timezone
+ * shifting the month (e.g. "2026-03-01" must stay March in all timezones).
+ */
+export function getMonthKey(dateValue) {
+    if (dateValue == null || dateValue === '') {
+        return null;
+    }
+
+    const str = String(dateValue).trim();
+    if (DATE_ONLY_REGEX.test(str)) {
+        const [year, month] = str.split('-').map(Number);
+        if (month >= 1 && month <= 12 && Number.isFinite(year)) {
+            return `${year}-${String(month).padStart(2, '0')}`;
+        }
+    }
+
+    const date = new Date(dateValue);
     if (Number.isNaN(date.getTime())) {
         return null;
     }

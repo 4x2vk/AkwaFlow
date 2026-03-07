@@ -17,7 +17,7 @@ import {
 } from '../lib/transactionPageUtils';
 
 export default function Expenses() {
-    const { expenses, loading, removeExpense, reorderExpenses } = useExpenses();
+    const { expenses, loading, loadError, removeExpense, reorderExpenses } = useExpenses();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingExpense, setEditingExpense] = useState(null);
 
@@ -75,6 +75,12 @@ export default function Expenses() {
     return (
         <Layout>
             <div className="space-y-6">
+                {loadError && (
+                    <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-red-200" role="alert">
+                        <strong>Не удалось загрузить данные из Firebase.</strong>{' '}
+                        Проверьте консоль (F12) для деталей. Убедитесь, что проект и переменные окружения настроены.
+                    </div>
+                )}
                 <div className="grid grid-cols-3 gap-3">
                     {/* Этот месяц - оранжевая карточка */}
                     <Card className="relative overflow-hidden p-4 flex flex-col justify-between min-h-[7rem] bg-orange-500/10 border border-orange-500/30 backdrop-blur-sm rounded-2xl">

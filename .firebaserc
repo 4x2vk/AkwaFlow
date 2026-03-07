@@ -1,5 +1,7 @@
 {
-  "projects": {},
+  "projects": {
+    "deploy": "akwaflow-manager-v1"
+  },
   "targets": {},
   "etags": {}
 }
