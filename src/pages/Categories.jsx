@@ -152,7 +152,7 @@ export default function Categories() {
                         </div>
                     ) : (
                         <>
-                            {categoriesList.map((cat, index) => {
+                            {categoriesList.map((cat) => {
                                 const catId = cat.id || cat.name;
                                 // Find index in userCategoriesInList for non-default categories
                                 const userCategoryIndex = cat.isDefault ? -1 : userCategoriesInList.findIndex(c => (c.id || c.name) === catId);

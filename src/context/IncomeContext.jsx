@@ -67,14 +67,12 @@ export function IncomeProvider({ children }) {
     const visibleIncomes = effectiveUid && loadedUid === effectiveUid ? incomes : [];
 
     const addIncome = async (income) => {
+        const newOrder = -Date.now();
         if (!user || user.uid === 'demo_user') {
-            const maxOrder = incomes.length > 0 
-                ? Math.max(...incomes.map(i => i.order || 0))
-                : -1;
             const newItem = { 
                 ...income, 
                 id: Date.now().toString(), 
-                order: maxOrder + 1,
+                order: newOrder,
                 createdAt: new Date().toISOString() 
             };
             setIncomes((prev) => [newItem, ...prev]);
@@ -87,14 +85,10 @@ export function IncomeProvider({ children }) {
             return;
         }
 
-        const maxOrder = incomes.length > 0 
-            ? Math.max(...incomes.map(i => i.order || 0))
-            : -1;
-
         try {
             await addDoc(collection(db, 'users', user.uid, 'incomes'), {
                 ...validation.data,
-                order: maxOrder + 1,
+                order: newOrder,
                 createdAt: new Date().toISOString()
             });
         } catch (error) {

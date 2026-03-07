@@ -3,14 +3,25 @@ import { Plus, Wallet, TrendingUp, Calendar } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { MonthPicker } from '../components/ui/MonthPicker';
 import { AddExpenseModal } from '../components/features/AddExpenseModal';
 import { ExpenseItem } from '../components/features/ExpenseItem';
 import { useExpenses } from '../context/ExpenseContext';
+
+const getMonthKey = (date) => {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
 
 export default function Expenses() {
     const { expenses, loading, removeExpense, reorderExpenses } = useExpenses();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingExpense, setEditingExpense] = useState(null);
+
+    const now = useMemo(() => new Date(), []);
+    const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const [selectedMonth, setSelectedMonth] = useState(defaultMonth); // null = все месяцы
     
     // Sort expenses by order
     const sortedExpenses = useMemo(() => {
@@ -25,22 +36,38 @@ export default function Expenses() {
             return bTime - aTime;
         });
     }, [expenses]);
+
+    const filteredExpenses = useMemo(() => {
+        if (!selectedMonth) return sortedExpenses;
+        return sortedExpenses.filter((e) => {
+            const key = getMonthKey(e.spentAt || e.createdAt);
+            return key === selectedMonth;
+        });
+    }, [sortedExpenses, selectedMonth]);
     
     const handleMoveUp = (index) => {
         if (index === 0) return;
-        // Move to top (index 0)
-        reorderExpenses(index, 0);
-    };
-    
-    const handleMoveDown = (index) => {
-        if (index >= sortedExpenses.length - 1) return;
-        // Move down one position
-        reorderExpenses(index, index + 1);
+        const item = filteredExpenses[index];
+        const globalIndex = sortedExpenses.findIndex((e) => e.id === item.id);
+        if (globalIndex < 0) return;
+        reorderExpenses(globalIndex, 0);
     };
 
-    const now = useMemo(() => new Date(), []);
-    const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const prevMonthDate = useMemo(() => new Date(now.getFullYear(), now.getMonth() - 1, 1), [now]);
+    const handleMoveDown = (index) => {
+        if (index >= filteredExpenses.length - 1) return;
+        const item = filteredExpenses[index];
+        const nextItem = filteredExpenses[index + 1];
+        const globalIndex = sortedExpenses.findIndex((e) => e.id === item.id);
+        const nextGlobalIndex = sortedExpenses.findIndex((e) => e.id === nextItem.id);
+        if (globalIndex < 0 || nextGlobalIndex < 0) return;
+        reorderExpenses(globalIndex, nextGlobalIndex);
+    };
+
+    const thisMonthKey = selectedMonth || defaultMonth;
+    const prevMonthDate = useMemo(() => {
+        const [y, m] = (selectedMonth || defaultMonth).split('-').map(Number);
+        return new Date(y, m - 2, 1);
+    }, [selectedMonth, defaultMonth]);
     const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
     const { totalsThisMonth, totalsPrevMonth } = useMemo(() => {
@@ -104,7 +131,7 @@ export default function Expenses() {
                             <TrendingUp size={28} className="text-white" />
                         </div>
                         <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">расходов</span>
-                        <div className="font-bold text-xl text-white relative z-10 mt-1">{expenses.length}</div>
+                        <div className="font-bold text-xl text-white relative z-10 mt-1">{selectedMonth ? filteredExpenses.length : expenses.length}</div>
                     </Card>
 
                     {/* Прошлый - темная карточка */}
@@ -130,16 +157,23 @@ export default function Expenses() {
                     </Card>
                 </div>
 
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-bold text-white">Расходы</h2>
-                    <Button
-                        size="sm"
-                        className="bg-primary hover:bg-primary-hover text-black font-bold rounded-lg gap-1 pl-2 pr-3"
-                        onClick={handleAdd}
-                    >
-                        <Plus size={16} />
-                        Добавить
-                    </Button>
+                <div className="flex flex-col gap-3 mb-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-bold text-white">Расходы</h2>
+                        <Button
+                            size="sm"
+                            className="bg-primary hover:bg-primary-hover text-black font-bold rounded-lg gap-1 pl-2 pr-3"
+                            onClick={handleAdd}
+                        >
+                            <Plus size={16} />
+                            Добавить
+                        </Button>
+                    </div>
+                    <MonthPicker
+                        value={selectedMonth}
+                        onChange={setSelectedMonth}
+                        placeholder="Все месяцы"
+                    />
                 </div>
 
                 <div className="space-y-3 pb-8">
@@ -149,23 +183,25 @@ export default function Expenses() {
                         </div>
                     ) : (
                         <>
-                            {sortedExpenses.map((e, index) => (
+                            {filteredExpenses.map((e, index) => (
                                 <ExpenseItem
                                     key={e.id}
                                     id={e.id}
                                     {...e}
                                     index={index}
-                                    totalItems={sortedExpenses.length}
+                                    totalItems={filteredExpenses.length}
                                     onDelete={() => removeExpense(e.id)}
                                     onClick={() => handleEdit(e)}
                                     onMoveUp={() => handleMoveUp(index)}
                                     onMoveDown={() => handleMoveDown(index)}
                                 />
                             ))}
-                            {sortedExpenses.length === 0 && (
+                            {filteredExpenses.length === 0 && (
                                 <Card className="bg-surface border-white/5 p-6 text-center">
                                     <div className="text-text-secondary">
-                                        Пока нет расходов. Добавьте первый расход, чтобы сравнивать траты по месяцам.
+                                        {selectedMonth
+                                            ? `Нет расходов за ${new Date(selectedMonth + '-01').toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}.`
+                                            : 'Пока нет расходов. Добавьте первый расход, чтобы сравнивать траты по месяцам.'}
                                     </div>
                                 </Card>
                             )}

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { isDevMode, getDevUID, setDevUID } from '../lib/devMode';

@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import { getFirestore } from "firebase/firestore";
 
 // Get Firebase config from environment variables only (no secrets in repo)
 // In Vite, environment variables must be prefixed with VITE_ to be exposed to client code

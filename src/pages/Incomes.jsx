@@ -3,15 +3,26 @@ import { Plus, Calendar, TrendingUp, Coins } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { MonthPicker } from '../components/ui/MonthPicker';
 import { AddIncomeModal } from '../components/features/AddIncomeModal';
 import { IncomeItem } from '../components/features/IncomeItem';
 import { useIncomes } from '../context/IncomeContext';
+
+const getMonthKey = (date) => {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
 
 export default function Incomes() {
     const { incomes, loading, removeIncome, reorderIncomes } = useIncomes();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingIncome, setEditingIncome] = useState(null);
-    
+
+    const now = useMemo(() => new Date(), []);
+    const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
+
     // Sort incomes by order
     const sortedIncomes = useMemo(() => {
         return [...incomes].sort((a, b) => {
@@ -25,22 +36,38 @@ export default function Incomes() {
             return bTime - aTime;
         });
     }, [incomes]);
-    
+
+    const filteredIncomes = useMemo(() => {
+        if (!selectedMonth) return sortedIncomes;
+        return sortedIncomes.filter((e) => {
+            const key = getMonthKey(e.receivedAt || e.createdAt);
+            return key === selectedMonth;
+        });
+    }, [sortedIncomes, selectedMonth]);
+
     const handleMoveUp = (index) => {
         if (index === 0) return;
-        // Move to top (index 0)
-        reorderIncomes(index, 0);
-    };
-    
-    const handleMoveDown = (index) => {
-        if (index >= sortedIncomes.length - 1) return;
-        // Move down one position
-        reorderIncomes(index, index + 1);
+        const item = filteredIncomes[index];
+        const globalIndex = sortedIncomes.findIndex((e) => e.id === item.id);
+        if (globalIndex < 0) return;
+        reorderIncomes(globalIndex, 0);
     };
 
-    const now = useMemo(() => new Date(), []);
-    const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const prevMonthDate = useMemo(() => new Date(now.getFullYear(), now.getMonth() - 1, 1), [now]);
+    const handleMoveDown = (index) => {
+        if (index >= filteredIncomes.length - 1) return;
+        const item = filteredIncomes[index];
+        const nextItem = filteredIncomes[index + 1];
+        const globalIndex = sortedIncomes.findIndex((e) => e.id === item.id);
+        const nextGlobalIndex = sortedIncomes.findIndex((e) => e.id === nextItem.id);
+        if (globalIndex < 0 || nextGlobalIndex < 0) return;
+        reorderIncomes(globalIndex, nextGlobalIndex);
+    };
+
+    const thisMonthKey = selectedMonth || defaultMonth;
+    const prevMonthDate = useMemo(() => {
+        const [y, m] = (selectedMonth || defaultMonth).split('-').map(Number);
+        return new Date(y, m - 2, 1);
+    }, [selectedMonth, defaultMonth]);
     const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
     const { totalsThisMonth, totalsPrevMonth } = useMemo(() => {
@@ -102,7 +129,7 @@ export default function Incomes() {
                             <TrendingUp size={28} className="text-white" />
                         </div>
                         <span className="text-[10px] text-white/70 uppercase tracking-wider font-semibold relative z-10">доходов</span>
-                        <div className="font-bold text-xl text-white relative z-10 mt-1">{incomes.length}</div>
+                        <div className="font-bold text-xl text-white relative z-10 mt-1">{selectedMonth ? filteredIncomes.length : incomes.length}</div>
                     </Card>
 
                     {/* Прошлый - темная карточка */}
@@ -127,16 +154,23 @@ export default function Incomes() {
                     </Card>
                 </div>
 
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-bold text-white">Доходы</h2>
-                    <Button
-                        size="sm"
-                        className="bg-primary hover:bg-primary-hover text-black font-bold rounded-lg gap-1 pl-2 pr-3"
-                        onClick={handleAdd}
-                    >
-                        <Plus size={16} />
-                        Добавить
-                    </Button>
+                <div className="flex flex-col gap-3 mb-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-lg font-bold text-white">Доходы</h2>
+                        <Button
+                            size="sm"
+                            className="bg-primary hover:bg-primary-hover text-black font-bold rounded-lg gap-1 pl-2 pr-3"
+                            onClick={handleAdd}
+                        >
+                            <Plus size={16} />
+                            Добавить
+                        </Button>
+                    </div>
+                    <MonthPicker
+                        value={selectedMonth}
+                        onChange={setSelectedMonth}
+                        placeholder="Все месяцы"
+                    />
                 </div>
 
                 <div className="space-y-3 pb-8">
@@ -146,23 +180,25 @@ export default function Incomes() {
                         </div>
                     ) : (
                         <>
-                            {sortedIncomes.map((e, index) => (
+                            {filteredIncomes.map((e, index) => (
                                 <IncomeItem
                                     key={e.id}
                                     id={e.id}
                                     {...e}
                                     index={index}
-                                    totalItems={sortedIncomes.length}
+                                    totalItems={filteredIncomes.length}
                                     onDelete={() => removeIncome(e.id)}
                                     onClick={() => handleEdit(e)}
                                     onMoveUp={() => handleMoveUp(index)}
                                     onMoveDown={() => handleMoveDown(index)}
                                 />
                             ))}
-                            {sortedIncomes.length === 0 && (
+                            {filteredIncomes.length === 0 && (
                                 <Card className="bg-surface border-white/5 p-6 text-center">
                                     <div className="text-text-secondary">
-                                        Пока нет доходов. Добавьте первый доход, чтобы видеть баланс в аналитике.
+                                        {selectedMonth
+                                            ? `Нет доходов за ${new Date(selectedMonth + '-01').toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}.`
+                                            : 'Пока нет доходов. Добавьте первый доход, чтобы видеть баланс в аналитике.'}
                                     </div>
                                 </Card>
                             )}

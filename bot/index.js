@@ -30,7 +30,7 @@ try {
                 credential: admin.credential.cert(serviceAccount)
             });
             console.log('✅ Firebase Admin initialized from file');
-        } catch (fileError) {
+        } catch {
             console.warn("⚠️ Warning: 'service-account.json' not found. Bot database writes will fail.");
         }
     }
@@ -42,7 +42,7 @@ try {
 const db = admin.firestore();
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const webAppUrl = process.env.WEB_APP_URL || 'https://akwaflow-manager-v1.web.app';
+const _webAppUrl = process.env.WEB_APP_URL || 'https://akwaflow-manager-v1.web.app';
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const RUN_MODE = process.env.RUN_MODE || 'bot'; // 'bot' | 'selftest'
 
@@ -182,7 +182,7 @@ const detectLanguage = (input) => {
 };
 
 // Intent detection (RU/EN + synonyms)
-const detectIntent = (rawText) => {
+const _detectIntent = (rawText) => {
     const t = normalizeText(rawText).toLowerCase();
     const has = (re) => re.test(t);
 
@@ -744,6 +744,7 @@ const extractTitleGeneric = (rawText) => {
 // Extract category from phrases like:
 // "категория Купанг", "category Food", "카테고리 쇼핑", "добавь категорию Бургер"
 // Also works for removal: "удали категорию Бургер"
+// eslint-disable-next-line no-unused-vars -- lang kept for API compatibility with callers
 const extractCategory = (rawText, lang) => {
     const text = normalizeText(rawText);
     // NOTE: JS \\b is ASCII-only and breaks on Cyrillic.
@@ -2206,7 +2207,7 @@ bot.on('voice', async (msg) => {
         }
 
         // Send user-friendly error message
-        const errorMessage = error.message || 'Неизвестная ошибка';
+        const _errorMessage = error.message || 'Неизвестная ошибка';
         bot.sendMessage(chatId, `😔 Извините, произошла ошибка при обработке голосового сообщения. Пожалуйста, попробуйте написать текстом или записать сообщение еще раз. 🙏`);
     }
 });
@@ -2427,8 +2428,8 @@ server.listen(PORT, () => {
     // Make an immediate health check to verify it works
     setTimeout(() => {
         http.get(`http://localhost:${PORT}/health`, (res) => {
-            let data = '';
-            res.on('data', (chunk) => { data += chunk; });
+            let _data = '';
+            res.on('data', (chunk) => { _data += chunk; });
             res.on('end', () => {
                 console.log(`✅ Health check verified: ${res.statusCode}`);
             });

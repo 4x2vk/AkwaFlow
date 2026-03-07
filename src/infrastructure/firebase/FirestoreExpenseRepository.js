@@ -5,7 +5,6 @@
 
 import { addDoc, collection, deleteDoc, doc, onSnapshot, query, updateDoc, writeBatch } from 'firebase/firestore';
 import { toExpense } from '../../domain/entities/expense.js';
-import { db } from '../../services/firebase.js';
 
 /**
  * Репозиторий расходов для одного пользователя (Firestore).

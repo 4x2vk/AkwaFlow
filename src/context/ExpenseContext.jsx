@@ -67,14 +67,12 @@ export function ExpenseProvider({ children }) {
     const visibleExpenses = effectiveUid && loadedUid === effectiveUid ? expenses : [];
 
     const addExpense = async (expense) => {
+        const newOrder = -Date.now();
         if (!user || user.uid === 'demo_user') {
-            const maxOrder = expenses.length > 0 
-                ? Math.max(...expenses.map(e => e.order || 0))
-                : -1;
             const newItem = { 
                 ...expense, 
                 id: Date.now().toString(), 
-                order: maxOrder + 1,
+                order: newOrder,
                 createdAt: new Date().toISOString() 
             };
             setExpenses((prev) => [newItem, ...prev]);
@@ -87,13 +85,9 @@ export function ExpenseProvider({ children }) {
             return;
         }
 
-        const maxOrder = expenses.length > 0 
-            ? Math.max(...expenses.map(e => e.order || 0))
-            : -1;
-
         await addDoc(collection(db, 'users', user.uid, 'expenses'), {
             ...validation.data,
-            order: maxOrder + 1,
+            order: newOrder,
             createdAt: new Date().toISOString()
         });
     };

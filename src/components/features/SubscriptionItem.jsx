@@ -23,7 +23,7 @@ function isLightColor(hexColor) {
     return luminance > 0.5;
 }
 
-export function SubscriptionItem({ id, icon, iconUrl, name, cycle, cost, color, currency = '₩', currencySymbol, billingPeriod, onDelete, onClick, onMoveUp, onMoveDown, index, totalItems }) {
+export function SubscriptionItem({ icon, iconUrl, name, cycle, cost, color, currency = '₩', currencySymbol, billingPeriod, onDelete, onClick, onMoveUp, onMoveDown, index, totalItems }) {
     const [failedIconUrl, setFailedIconUrl] = useState(null);
     
     const displayCurrency = currencySymbol || currency;
