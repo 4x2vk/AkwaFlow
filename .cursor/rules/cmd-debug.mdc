@@ -1,0 +1,132 @@
+---
+description: Debug issues by investigating logs, git history, and project state. Use when the user describes a bug or asks for help debugging. Investigation-focused; no file editing unless user asks.
+alwaysApply: false
+---
+
+# Debug
+
+You are tasked with helping debug issues during manual testing or implementation. This command allows you to investigate problems by examining logs, project state, and git history. Think of this as a way to bootstrap a debugging session.
+
+## Initial Response
+
+When invoked WITH a plan/ticket file:
+```
+I'll help debug issues with [file name]. Let me understand the current state.
+
+What specific problem are you encountering?
+- What were you trying to test/implement?
+- What went wrong?
+- Any error messages?
+
+I'll investigate the logs, project state, and git state to help figure out what's happening.
+```
+
+When invoked WITHOUT parameters:
+```
+I'll help debug your current issue.
+
+Please describe what's going wrong:
+- What are you working on?
+- What specific problem occurred?
+- When did it last work?
+
+I can investigate logs, project state, and recent changes to help identify the issue.
+```
+
+## Environment Information
+
+You have access to:
+
+**Logs** (project-specific):
+- Build/dev server logs (e.g. terminal output, npm/vite logs)
+- Firebase or backend logs if applicable
+- Browser console errors (user may need to share)
+
+**Project state**:
+- `package.json` scripts and dependencies
+- Config files (vite.config.js, firebase.json, .env.example)
+- Current branch and recent commits
+
+**Git State**:
+- Check current branch, recent commits, uncommitted changes
+- Similar to how the commit rule works — understand what changed
+
+## Process Steps
+
+### Step 1: Understand the Problem
+
+After the user describes the issue:
+
+1. **Read any provided context** (plan or ticket file):
+ - Understand what they're implementing/testing
+ - Note which phase or step they're on
+ - Identify expected vs actual behavior
+
+2. **Quick state check**:
+ - Current git branch and recent commits
+ - Any uncommitted changes
+ - When the issue started occurring
+
+### Step 2: Investigate the Issue
+
+- **Recent code changes**: Use git log, git diff to see what changed
+- **Relevant files**: Read the code paths involved (components, services, config)
+- **Logs and errors**: If user shared stack traces or console output, analyze them
+- **Dependencies and config**: Check package.json, env, and config files for mismatches
+
+### Step 3: Present Findings
+
+Based on the investigation, present a focused debug report:
+
+```markdown
+## Debug Report
+
+### What's Wrong
+[Clear statement of the issue based on evidence]
+
+### Evidence Found
+
+**From Git/Code**:
+- [Recent changes that might be related]
+- [File or logic that could explain the bug]
+
+**From Logs/Errors** (if provided):
+- [Error/warning with context]
+
+### Root Cause
+[Most likely explanation based on evidence]
+
+### Next Steps
+
+1. **Try This First**:
+   [Specific change or command]
+
+2. **If That Doesn't Work**:
+ - Check browser console (F12)
+ - Restart dev server
+ - Verify env vars and config
+```
+
+## Important Notes
+
+- **Focus on manual testing scenarios** — This is for debugging during implementation
+- **Always require problem description** — Can't debug without knowing what's wrong
+- **Read files completely** when analyzing code paths
+- **Think like the commit rule** — Understand git state and changes
+- **Guide back to user** — Some issues (browser console, runtime env) may need user to share output
+- **No file editing in this mode** unless the user explicitly asks you to apply a fix
+
+## Quick Reference
+
+**Git state**:
+```bash
+git status
+git log --oneline -10
+git diff
+```
+
+**Project**:
+- Inspect `package.json`, `vite.config.js`, Firebase config
+- Read the relevant source files for the feature that's failing
+
+Remember: This rule helps you investigate without jumping to edits. Perfect for when the user hits an issue and needs to dig into recent changes, config, or logic.
