@@ -1,15 +1,15 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 
-// Get Firebase config from environment variables
+// Get Firebase config from environment variables only (no secrets in repo)
 // In Vite, environment variables must be prefixed with VITE_ to be exposed to client code
 const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAmDK9PqSWGSHv5b5D9KPUfDby0omJ3u7Y",
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "akwaflow-manager-v1.firebaseapp.com",
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "akwaflow-manager-v1",
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "akwaflow-manager-v1.firebasestorage.app",
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "1011919101048",
-    appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:1011919101048:web:58b26850e6fe1c7774a18d"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // Validate that required config is present
