@@ -30,7 +30,7 @@ try {
                 credential: admin.credential.cert(serviceAccount)
             });
             console.log('✅ Firebase Admin initialized from file');
-        } catch (fileError) {
+        } catch {
             console.warn("⚠️ Warning: 'service-account.json' not found. Bot database writes will fail.");
         }
     }
@@ -39,12 +39,129 @@ try {
     console.warn("⚠️ Warning: Bot database writes will fail.");
 }
 
-const db = admin.firestore();
-
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const webAppUrl = process.env.WEB_APP_URL || 'https://akwaflow-manager-v1.web.app';
+const _webAppUrl = process.env.WEB_APP_URL || 'https://akwaflow-manager-v1.web.app';
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const RUN_MODE = process.env.RUN_MODE || 'bot'; // 'bot' | 'selftest'
+const IS_SELFTEST = RUN_MODE === 'selftest';
+
+const clonePlain = (value) => JSON.parse(JSON.stringify(value ?? null));
+
+const createSelftestFirestore = () => {
+    const collections = new Map();
+    let idCounter = 0;
+
+    const ensureCollection = (pathKey) => {
+        if (!collections.has(pathKey)) {
+            collections.set(pathKey, new Map());
+        }
+        return collections.get(pathKey);
+    };
+
+    const makeDocRef = (pathKey) => {
+        const segments = pathKey.split('/');
+        const id = segments[segments.length - 1];
+        const parentPath = segments.slice(0, -1).join('/');
+
+        return {
+            id,
+            async get() {
+                const col = ensureCollection(parentPath);
+                const entry = col.get(id);
+                return {
+                    id,
+                    ref: makeDocRef(pathKey),
+                    exists: Boolean(entry),
+                    data: () => clonePlain(entry?.data)
+                };
+            },
+            async set(data) {
+                const col = ensureCollection(parentPath);
+                col.set(id, { data: clonePlain(data) });
+            },
+            async update(data) {
+                const col = ensureCollection(parentPath);
+                const current = col.get(id) || { data: {} };
+                current.data = { ...current.data, ...clonePlain(data) };
+                col.set(id, current);
+            },
+            async delete() {
+                const col = ensureCollection(parentPath);
+                col.delete(id);
+            },
+            collection(name) {
+                return makeCollectionRef(`${pathKey}/${name}`);
+            }
+        };
+    };
+
+    const makeCollectionRef = (pathKey) => ({
+        async get() {
+            const col = ensureCollection(pathKey);
+            const docs = [...col.entries()].map(([id, entry]) => ({
+                id,
+                ref: makeDocRef(`${pathKey}/${id}`),
+                data: () => clonePlain(entry.data)
+            }));
+            return {
+                empty: docs.length === 0,
+                docs
+            };
+        },
+        async add(data) {
+            idCounter += 1;
+            const id = `selftest_${idCounter}`;
+            const col = ensureCollection(pathKey);
+            col.set(id, { data: clonePlain(data) });
+            return makeDocRef(`${pathKey}/${id}`);
+        },
+        doc(id) {
+            return makeDocRef(`${pathKey}/${id}`);
+        }
+    });
+
+    return {
+        collection(name) {
+            return makeCollectionRef(name);
+        },
+        __reset() {
+            collections.clear();
+            idCounter = 0;
+        },
+        __dump() {
+            return [...collections.entries()].reduce((acc, [pathKey, docs]) => {
+                acc[pathKey] = [...docs.entries()].map(([id, entry]) => ({ id, data: clonePlain(entry.data) }));
+                return acc;
+            }, {});
+        }
+    };
+};
+
+const selftestMessages = [];
+const createSelftestBot = () => ({
+    on() {
+        return undefined;
+    },
+    async sendMessage(chatId, text, options = {}) {
+        const message = {
+            chatId: String(chatId),
+            text: String(text),
+            options
+        };
+        selftestMessages.push(message);
+        return { message_id: selftestMessages.length, ...message };
+    },
+    async deleteMessage() {
+        return true;
+    },
+    async getFile() {
+        throw new Error('Voice download is unavailable in selftest mode.');
+    }
+});
+
+const db = admin.apps.length > 0
+    ? admin.firestore()
+    : (IS_SELFTEST ? createSelftestFirestore() : null);
 
 // Admin IDs - comma-separated list of Telegram user IDs who can send broadcasts
 // Example: ADMIN_IDS=123456789,987654321
@@ -62,7 +179,7 @@ if (!token && RUN_MODE === 'bot') {
     process.exit(1);
 }
 
-let bot;
+let bot = IS_SELFTEST ? createSelftestBot() : null;
 if (RUN_MODE === 'bot') {
     try {
         // Only enable polling in production (Railway/server)
@@ -181,8 +298,19 @@ const detectLanguage = (input) => {
     return 'en';
 };
 
+const QUICK_EXAMPLES = [
+    '• «Добавь Netflix 10000 вон 12 числа»',
+    '• «Расход 12000 вон кафе сегодня»',
+    '• «Доход 500000₩ зарплата сегодня»',
+    '• «Добавь категорию Еда»'
+].join('\n');
+
+const buildQuickExamplesMessage = (lead = 'Вот несколько примеров:') => {
+    return `${lead}\n${QUICK_EXAMPLES}`;
+};
+
 // Intent detection (RU/EN + synonyms)
-const detectIntent = (rawText) => {
+const _detectIntent = (rawText) => {
     const t = normalizeText(rawText).toLowerCase();
     const has = (re) => re.test(t);
 
@@ -262,44 +390,56 @@ const detectIntentV2 = (rawText) => {
 
     // Remove
     const removeRe = /\b(удал(и|ить)|убери|сотри|отмени|remove|delete)\b/;
+    const hasSubscriptionKeyword = t.includes('подписк') || t.includes('매달') || hasAnyToken(['subscription', 'sub', '구독']);
+    const hasExpenseKeyword = hasAnyToken(['расход', 'расходы', 'трата', 'траты', 'потратил', 'потратила', 'купил', 'купила', 'spend', 'spent', 'expense', '지출', '썼어', '사용', '결제']);
+    const hasIncomeKeyword = hasAnyToken(['доход', 'доходы', 'прибыль', 'получил', 'получила', 'заработал', 'заработала', 'income', 'earned', '수입', '월급', '받았']);
     if (has(removeRe) || has(/^\/(remove|delete)\b/)) {
-        if (hasAnyToken(['подписк', 'subscription', '구독'])) return { intent: 'subscription_remove', lang, confidence: 0.95 };
+        if (hasSubscriptionKeyword) return { intent: 'subscription_remove', lang, confidence: 0.95 };
         if (hasAnyToken(['расход', 'расходы', 'трата', 'траты', 'expense', 'spent', '지출'])) return { intent: 'expense_remove', lang, confidence: 0.95 };
         if (hasAnyToken(['доход', 'доходы', 'income', 'earned', '수입'])) return { intent: 'income_remove', lang, confidence: 0.95 };
         return { intent: 'remove', lang, confidence: 0.7 }; // legacy: subscription remove by name
     }
 
-    // Category operations - check BEFORE other add operations to avoid conflicts
-    // Category list - "мои категории", "список категорий"
-    if (
-        t.includes('мои категории') || t.includes('my categories') || t.includes('내 카테고리') ||
-        (hasAnyToken(['список', 'list', 'покажи', 'показать', 'show']) && hasAnyToken(['категори', 'category', '카테고리', '분류']))
-    ) return { intent: 'category_list', lang, confidence: 0.95 };
+    // Explicit add type triggers
+    const addVerbTokens = ['добав', 'создай', 'запиши', 'оформи', 'подключи', 'add', '추가', '등록'];
+    const listTokens = ['список', 'list', 'покажи', 'показать', 'show'];
+    const categoryKeywords = ['категори', 'category', '카테고리', '분류'];
+    const hasCategoryKeyword = categoryKeywords.some((kw) => t.includes(kw));
+    const startsWithCategoryCommand = /^(кат(?:\s+|$)|категор(?:ия|ии|ию|ией)?\s+|category\s+|카테고리\s+|분류\s+)/iu.test(t);
+    const hasAddVerb = addVerbTokens.some((verb) => t.includes(verb));
 
-    // Category remove - "удали категорию Бургер", "delete category Food"
-    if (has(removeRe) && (hasAnyToken(['категори', 'category', '카테고리', '분류']) || t.includes('категори'))) {
+    if (hasExpenseKeyword) return { intent: 'expense_add', lang, confidence: 0.9 };
+    if (hasIncomeKeyword) return { intent: 'income_add', lang, confidence: 0.9 };
+    if (hasSubscriptionKeyword) return { intent: 'subscription_add', lang, confidence: 0.85 };
+
+    // Category commands should only win when the category keyword is the main action,
+    // not when it is just an inline field like "расход 5000 ... категория Еда".
+    if (
+        t.includes('мои категории') ||
+        t.includes('my categories') ||
+        t.includes('내 카테고리') ||
+        (hasCategoryKeyword && hasAnyToken(listTokens))
+    ) {
+        return { intent: 'category_list', lang, confidence: 0.95 };
+    }
+
+    if (hasCategoryKeyword && has(removeRe)) {
         return { intent: 'category_remove', lang, confidence: 0.9 };
     }
 
-    // Category add - "добавь категорию Бургер", "add category Food"
-    // Use simpler check: look for category keyword + add verb, or just "категория" + name
     if (
-        (hasAnyToken(['добав', 'создай', 'запиши', 'оформи', 'подключи', 'add', '추가', '등록']) && 
-         (hasAnyToken(['категори', 'category', '카테고리', '분류']) || t.includes('категори'))) ||
-        (t.includes('категори') && !has(removeRe) && !t.includes('список') && !t.includes('list'))
+        hasCategoryKeyword &&
+        (
+            startsWithCategoryCommand ||
+            (hasAddVerb && !hasExpenseKeyword && !hasIncomeKeyword && !hasSubscriptionKeyword)
+        )
     ) {
         return { intent: 'category_add', lang, confidence: 0.9 };
     }
 
-    // Explicit add type triggers
-    const expenseTokens = ['расход', 'расходы', 'трата', 'траты', 'потратил', 'потратила', 'купил', 'купила', 'spend', 'spent', 'expense', '지출', '썼어', '사용', '결제'];
-    const incomeTokens = ['доход', 'доходы', 'прибыль', 'получил', 'получила', 'заработал', 'заработала', 'income', 'earned', '수입', '월급', '받았'];
-    const subTokens = ['подписк', 'subscription', 'sub', '구독', '매달'];
-    const addVerbTokens = ['добав', 'создай', 'запиши', 'оформи', 'подключи', 'add', '추가', '등록'];
-
-    if (hasAnyToken(expenseTokens)) return { intent: 'expense_add', lang, confidence: 0.9 };
-    if (hasAnyToken(incomeTokens)) return { intent: 'income_add', lang, confidence: 0.9 };
-    if (hasAnyToken(subTokens)) return { intent: 'subscription_add', lang, confidence: 0.85 };
+    if (hasAddVerb) {
+        return { intent: 'add', lang, confidence: 0.5 };
+    }
 
     if (has(/\b(привет|hello|hi)\b/) || (lang === 'ko' && has(/\b(안녕|안녕하세요)\b/))) return { intent: 'greet', lang, confidence: 0.8 };
 
@@ -312,34 +452,26 @@ const detectIntentV2 = (rawText) => {
             /(\d)\s*(вон|원|руб|р(?![a-z])|тг|тенге|won|krw|usd|rub|kzt|eur)/iu.test(t)
         );
 
+    const hasRecurringHint =
+        ['каждый', 'ежемесячно', 'monthly', 'yearly', 'ежегодно', 'annual', '매달'].some((token) => t.includes(token)) ||
+        /(^|[^\p{L}\p{N}_])\d{1,2}\s*(числа|число|го|th)([^\p{L}\p{N}_]|$)/iu.test(t);
+    const hasExpenseDateHint = ['сегодня', 'вчера', 'today', 'yesterday', '오늘', '어제'].some((token) => t.includes(token));
+
+    if (hasMoney && hasRecurringHint) {
+        return { intent: 'subscription_add', lang, confidence: 0.68 };
+    }
+
+    if (hasMoney && hasExpenseDateHint) {
+        return { intent: 'expense_add', lang, confidence: 0.62 };
+    }
+
     // “add + money” but no type -> treat as subscription add (as before), low confidence
-    if (hasMoney && hasAnyToken(addVerbTokens)) {
+    if (hasMoney && hasAddVerb) {
         return { intent: 'subscription_add', lang, confidence: 0.6 };
     }
 
     // Money but no clear type -> ask
     if (hasMoney) return { intent: 'add_ambiguous', lang, confidence: 0.45 };
-
-    // Category list - "мои категории", "список категорий"
-    const categoryKeywords = ['категори', 'category', '카테고리', '분류'];
-    const hasCategoryKeyword = categoryKeywords.some(kw => t.includes(kw));
-    
-    if (
-        (t.includes('список') || t.includes('list') || t.includes('покажи') || t.includes('показать') || t.includes('show')) && hasCategoryKeyword ||
-        t.includes('мои категории') || t.includes('my categories') || t.includes('내 카테고리')
-    ) return { intent: 'category_list', lang, confidence: 0.95 };
-
-    // Category remove - "удали категорию Бургер", "delete category Food"
-    if (has(removeRe) && hasCategoryKeyword) {
-        return { intent: 'category_remove', lang, confidence: 0.9 };
-    }
-
-    // Category add - "добавь категорию Бургер", "add category Food"
-    // Check for add verbs and category keywords using includes (more reliable for Cyrillic)
-    const hasAddVerb = addVerbTokens.some(verb => t.includes(verb));
-    if (hasAddVerb && hasCategoryKeyword) {
-        return { intent: 'category_add', lang, confidence: 0.9 };
-    }
 
     // Backward-compatible: old "list" keyword
     if (hasAnyToken(['список', 'list', 'subscriptions'])) return { intent: 'subscription_list', lang, confidence: 0.55 };
@@ -441,6 +573,96 @@ const getPending = (chatId) => {
 
 const setPending = (chatId, pending) => {
     pendingByChat.set(String(chatId), { ...pending, createdAt: Date.now() });
+};
+
+const selftestRuntime = IS_SELFTEST ? {
+    reset() {
+        selftestMessages.length = 0;
+        pendingByChat.clear();
+        db?.__reset?.();
+    },
+    getMessages() {
+        return [...selftestMessages];
+    },
+    getData() {
+        return db?.__dump?.() ?? {};
+    }
+} : null;
+
+const formatMoney = (amount, symbol = '₩') => `${symbol}${Number(amount).toLocaleString()}`;
+
+const formatDateRu = (dateValue) => {
+    if (!dateValue) return '—';
+    return new Date(dateValue).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+};
+
+const buildClarifyAddTypeMessage = (slots) => {
+    const title = slots?.title ? `«${slots.title}»` : 'запись';
+    const amount = slots?.amount === null || slots?.amount === undefined
+        ? 'без суммы'
+        : formatMoney(slots.amount, slots?.currencySymbol || '₩');
+
+    return [
+        `Похоже, вы хотите записать ${title} на ${amount}, но неясно, что это именно.`,
+        'Напишите: `расход`, `доход` или `подписка`.',
+        'Можно и цифрой: `1`, `2` или `3`.'
+    ].join('\n');
+};
+
+const includesAnyFragment = (input, fragments) => {
+    const text = String(input || '').toLowerCase();
+    return fragments.some((fragment) => text.includes(fragment));
+};
+
+const matchesPendingChoice = (pending, normalizedText) => {
+    const answer = normalizedText.trim().toLowerCase();
+
+    if (!pending || !answer) return false;
+
+    if (pending.type === 'clarify_add_type') {
+        const compact = answer.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+        return /^(1|2|3)$/.test(compact) || [
+            'расход', 'трата', 'expense', 'spent', '지출',
+            'доход', 'income', 'earned', '수입',
+            'подписка', 'подписку', 'подписки', 'subscription', '구독'
+        ].includes(compact);
+    }
+
+    if (pending.type === 'remove' || pending.type === 'expense_remove' || pending.type === 'income_remove' || pending.type === 'category_remove') {
+        if (/^\d+$/.test(answer)) return true;
+        const options = pending.data?.options || [];
+        return options.some((option) => String(option.name || '').toLowerCase() === answer);
+    }
+
+    return false;
+};
+
+const shouldInterruptPendingWithNewIntent = (pending, rawText, intentInfo) => {
+    if (!pending) return false;
+
+    const normalizedText = normalizeText(rawText).toLowerCase();
+    if (matchesPendingChoice(pending, normalizedText)) return false;
+
+    const interruptIntents = new Set([
+        'start',
+        'help',
+        'greet',
+        'subscription_list',
+        'expense_list',
+        'income_list',
+        'category_list',
+        'subscription_add',
+        'expense_add',
+        'income_add',
+        'category_add',
+        'subscription_remove',
+        'expense_remove',
+        'income_remove',
+        'category_remove',
+        'remove'
+    ]);
+
+    return interruptIntents.has(intentInfo?.intent) && (intentInfo?.confidence ?? 0) >= 0.55;
 };
 
 // Date Helper - Parse date from text like "12 числа" or "31число"
@@ -695,25 +917,6 @@ const extractTitleGeneric = (rawText) => {
             continue;
         }
         
-        // Skip tokens that match the category value (handle multi-word categories)
-        if (categoryTokens.length > 0) {
-            let matchesCategory = false;
-            // Check if current token starts a sequence matching category tokens
-            for (let j = 0; j < categoryTokens.length && i + j < tokens.length; j++) {
-                if (tokens[i + j] === categoryTokens[j]) {
-                    if (j === categoryTokens.length - 1) {
-                        matchesCategory = true;
-                        // Skip all tokens in this category sequence
-                        i += j;
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-            if (matchesCategory) continue;
-        }
-
         // Drop pure numbers
         if (/^\d+(?:[.,]\d+)?$/.test(tok)) continue;
 
@@ -744,48 +947,93 @@ const extractTitleGeneric = (rawText) => {
 // Extract category from phrases like:
 // "категория Купанг", "category Food", "카테고리 쇼핑", "добавь категорию Бургер"
 // Also works for removal: "удали категорию Бургер"
+// eslint-disable-next-line no-unused-vars -- lang kept for API compatibility with callers
 const extractCategory = (rawText, lang) => {
     const text = normalizeText(rawText);
-    // NOTE: JS \\b is ASCII-only and breaks on Cyrillic.
-    // Use Unicode-aware boundaries instead: (^|[^\\p{L}\\p{N}_]) ... (?:$|[^\\p{L}\\p{N}_])
-    const patterns = [
-        // RU: категория <name> or добавь категорию <name> or удали категорию <name>
-        { re: /(?:^|[^\p{L}\p{N}_])(?:добав(?:ь|ить|ляй|им)|создай|запиши|оформи|подключи|удал(?:и|ить)|убери|сотри|отмени|remove|delete|add|추가|등록)?\s*категор(?:ия|ии|ию|ией)?\s+([^\d.,;]+?)(?:\s|$|[^\p{L}\p{N}_])/giu, group: 1 },
-        // RU short: кат <name>
-        { re: /(?:^|[^\p{L}\p{N}_])(?:добав(?:ь|ить|ляй|им)|создай|запиши|оформи|подключи|удал(?:и|ить)|убери|сотри|отмени|remove|delete|add|추가|등록)?\s*кат\s+([^\d.,;]+?)(?:\s|$|[^\p{L}\p{N}_])/giu, group: 1 },
-        // EN: category <name> or add category <name> or delete category <name>
-        { re: /(?:^|\s)(?:add|create|make|remove|delete)?\s*category\s+([^\d.,;]+?)(?:\s|$)/giu, group: 1 },
-        // KO: 카테고리/분류 <name>
-        { re: /(?:^|\s)(?:추가|등록|삭제)?\s*(카테고리|분류)\s+([^\d.,;]+?)(?:\s|$)/giu, group: 2 }
-    ];
+    const labelRe = /(?:^|[^\p{L}\p{N}_])(?:категор(?:ия|ии|ию|ией)?|кат|category|카테고리|분류)\s+/giu;
+    const matches = [...text.matchAll(labelRe)];
+    if (matches.length === 0) return null;
 
-    let matchText = null;
-    for (const { re, group } of patterns) {
-        const matches = [...text.matchAll(re)];
-        if (matches.length > 0) {
-            const lastMatch = matches[matches.length - 1];
-            matchText = lastMatch[group];
-        }
+    const last = matches[matches.length - 1];
+    const tailStart = (last.index ?? 0) + last[0].length;
+    const tail = text.slice(tailStart).trim();
+    if (!tail) return null;
+
+    const stopTokenRe = /^(сегодня|вчера|завтра|послезавтра|today|yesterday|tomorrow|오늘|어제|내일|모레|через|every|monthly|yearly|ежемесячно|ежегодно|₽|₩|₸|\$|€|won|krw|rub|usd|kzt|eur|руб|рублей|рубля|дол|доллар|доллара|долларов|тенге|тенг|тг|вон|원|만원|천원)$/iu;
+    const categoryTokens = [];
+
+    for (const token of tail.split(/\s+/g)) {
+        const cleanToken = token.replace(/[.,;:()]+$/g, '').trim();
+        if (!cleanToken) continue;
+        if (/^\d+(?:[.,]\d+)?$/.test(cleanToken)) break;
+        if (stopTokenRe.test(cleanToken)) break;
+        categoryTokens.push(cleanToken);
     }
 
-    if (!matchText) return null;
-
-    let cat = matchText.trim();
-    
-    // Remove stop words (dates, currencies, numbers) that might have been captured
-    const stopWords = /\s+(сегодня|вчера|завтра|послезавтра|today|yesterday|tomorrow|오늘|어제|내일|모레|\d+(?:[.,]\d+)?|[₽₩₸$€]|won|krw|rub|usd|kzt|eur|руб|дол|тен|тг|вон|원|만원|천원).*$/i;
-    cat = cat.replace(stopWords, '');
-    
-    // Remove extra spaces
-    cat = cat.replace(/\s+/g, ' ').trim();
-    
-    // If category became empty after cleaning, return null
-    if (!cat || cat.length === 0) return null;
+    let cat = categoryTokens.join(' ').replace(/\s+/g, ' ').trim();
+    if (!cat) return null;
 
     // Capitalize first character when possible (works for Cyrillic/Latin)
     if (cat.length >= 1) cat = cat[0].toUpperCase() + cat.slice(1);
 
     return cat;
+};
+
+const extractNumericCandidates = (rawText) => {
+    const text = normalizeText(rawText);
+    const numberRegex = /(\d+(?:[.,]\d+)?|\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?)/g;
+    const matches = [];
+    let match;
+
+    while ((match = numberRegex.exec(text)) !== null) {
+        const rawValue = match[1];
+        const parsed = parseFloat(rawValue.replace(/\s|\u00A0/g, '').replace(',', '.'));
+        if (!Number.isFinite(parsed)) continue;
+        matches.push({
+            raw: rawValue,
+            value: parsed,
+            index: match.index,
+            before: text.slice(Math.max(0, match.index - 18), match.index).toLowerCase(),
+            after: text.slice(match.index + rawValue.length, match.index + rawValue.length + 18).toLowerCase()
+        });
+    }
+
+    return matches;
+};
+
+const chooseAmountCandidate = (rawText, mode = 'generic') => {
+    const candidates = extractNumericCandidates(rawText);
+    if (candidates.length === 0) return null;
+
+    const currencyRe = /(₽|₩|₸|\$|€|\b(rub|usd|kzt|krw|won|eur|руб(ль|ля|лей)?|доллар(а|ов)?|бакс(ов)?|тенге|тенг|тг|вон(а|ы)?|원|만원|천원)\b)/iu;
+    const dateWordRe = /\b(числа|число|го|th|сегодня|вчера|завтра|послезавтра|today|yesterday|tomorrow|오늘|어제|내일|모레|янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек)\b/iu;
+    const recurringRe = /\b(каждый|ежемесячно|monthly|yearly|annual|ежегодно|매달)\b/iu;
+    const hasExplicitDate = /\b\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?\b/.test(normalizeText(rawText));
+
+    const scored = candidates.map((candidate, index) => {
+        let score = 0;
+        const context = `${candidate.before} ${candidate.after}`;
+        const hasCurrencyNearby = currencyRe.test(candidate.before) || currencyRe.test(candidate.after);
+        const hasDateWordNearby = dateWordRe.test(context);
+
+        if (hasCurrencyNearby) score += 8;
+        if (candidate.value >= 100) score += 3;
+        if (candidate.value > 31) score += 2;
+        if (mode === 'subscription') score += index;
+        if (mode !== 'subscription') score += index * 0.25;
+        if (hasDateWordNearby && candidate.value <= 31) score -= 6;
+        if (hasExplicitDate && candidate.value <= 31) score -= 5;
+        if (recurringRe.test(context) && candidate.value <= 31) score -= 3;
+
+        return { ...candidate, score };
+    });
+
+    scored.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return b.index - a.index;
+    });
+
+    return scored[0]?.value ?? null;
 };
 
 const extractSlotsV2 = (rawText, intentInfo) => {
@@ -794,7 +1042,9 @@ const extractSlotsV2 = (rawText, intentInfo) => {
     const intent = intentInfo?.intent || 'unknown';
 
     const { code, symbol } = detectCurrency(normalized);
-    const amount = intent === 'subscription_add' ? extractSubscriptionCost(normalized) : extractCost(normalized);
+    const amount = intent === 'subscription_add'
+        ? extractSubscriptionCost(normalized)
+        : extractCost(normalized);
 
     const billingPeriod = detectBillingPeriod(normalized);
     const subscriptionDate = parseDateEnhanced(normalized);
@@ -823,44 +1073,14 @@ const extractSlotsV2 = (rawText, intentInfo) => {
 };
 
 const extractCost = (rawText) => {
-    const text = normalizeText(rawText);
-    // Prefer continuous digits first (handles "6000вон", "5000₩", etc.)
-    const m = text.match(/(\d+(?:[.,]\d+)?|\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?)/);
-    if (!m) return null;
-    const n = parseFloat(m[1].replace(/\s|\u00A0/g, '').replace(',', '.'));
-    return Number.isFinite(n) ? n : null;
+    return chooseAmountCandidate(rawText, 'generic');
 };
 
 // For subscriptions it is common to сначала назвать день, потом сумму:
 // «Добавь подписку KT 15 числа 12000 рублей»
 // Здесь первая цифра = день, а реальная стоимость = последняя цифра рядом с валютой.
 const extractSubscriptionCost = (rawText) => {
-    const text = normalizeText(rawText);
-    // Prefer continuous digits first (handles "5000вон", "6000₩" etc.)
-    const numberRegex = /(\d+(?:[.,]\d+)?|\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d+)?)/g;
-    const currencyRegex = /(₽|₩|₸|\$|\b(rub|usd|kzt|krw|won|руб(ль|ля|лей)?|доллар(а|ов)?|бакс(ов)?|тенге|тенг|тг|вон(а|ы)?)\b)/i;
-
-    const matches = [];
-    let m;
-    while ((m = numberRegex.exec(text)) !== null) {
-        matches.push({ value: m[1], index: m.index });
-    }
-    if (!matches.length) return null;
-
-    // Ищем число, возле которого есть валюта (чаще всего это и есть стоимость)
-    for (let i = matches.length - 1; i >= 0; i--) {
-        const { value, index } = matches[i];
-        const windowAfter = text.slice(index + value.length, index + value.length + 12);
-        if (currencyRegex.test(windowAfter)) {
-            const n = parseFloat(value.replace(/\s|\u00A0/g, '').replace(',', '.'));
-            return Number.isFinite(n) ? n : null;
-        }
-    }
-
-    // fallback: берём последнее число как стоимость
-    const last = matches[matches.length - 1].value;
-    const n = parseFloat(last.replace(/\s|\u00A0/g, '').replace(',', '.'));
-    return Number.isFinite(n) ? n : null;
+    return chooseAmountCandidate(rawText, 'subscription');
 };
 
 // Function to download audio file from Telegram
@@ -920,7 +1140,6 @@ const transcribeAudio = async (audioFilePath) => {
             knownLength: audioBuffer.length
         });
         form.append('model', 'whisper-1');
-        form.append('language', 'ru'); // Russian language
 
         console.log(`[BOT] Sending audio file to OpenAI: ${fileName} (${audioBuffer.length} bytes)`);
 
@@ -984,9 +1203,14 @@ const transcribeAudio = async (audioFilePath) => {
 const processTextCommand = async (chatId, text) => {
     const rawText = String(text || '');
     const normalized = normalizeText(rawText);
-    const intentInfo = detectIntentV2(normalized);
+    const intentInfo = detectIntentV2(rawText);
     const intent = intentInfo.intent;
     const slots = extractSlotsV2(rawText, intentInfo);
+
+    if (!db && !['start', 'help', 'greet', 'cancel'].includes(intent)) {
+        bot.sendMessage(chatId, 'Сейчас база временно недоступна, поэтому я не могу сохранить или показать данные. Попробуйте чуть позже.');
+        return;
+    }
 
     // Ensure user document exists when they interact
     await ensureUserExists(chatId);
@@ -1007,13 +1231,22 @@ const processTextCommand = async (chatId, text) => {
             return;
         }
 
+        if (shouldInterruptPendingWithNewIntent(pending, rawText, intentInfo)) {
+            clearPending(chatId);
+        }
+    }
+
+    const activePending = getPending(chatId);
+    if (activePending) {
+        const pending = activePending;
+
         if (pending.type === 'clarify_add_type') {
             const answer = normalized.toLowerCase().trim();
             const idx = parseInt(answer, 10);
             const choice = !isNaN(idx) ? idx : null;
-            const looksExpense = /\b(расход|трата|expense|spent|지출)\b/i.test(answer) || choice === 1;
-            const looksIncome = /\b(доход|income|earned|수입)\b/i.test(answer) || choice === 2;
-            const looksSub = /\b(подписк|subscription|구독)\b/i.test(answer) || choice === 3;
+            const looksExpense = includesAnyFragment(answer, ['расход', 'трата', 'expense', 'spent', '지출']) || choice === 1;
+            const looksIncome = includesAnyFragment(answer, ['доход', 'income', 'earned', '수입']) || choice === 2;
+            const looksSub = includesAnyFragment(answer, ['подписк', 'subscription', '구독']) || choice === 3;
 
             const originalText = pending.data?.rawText || '';
             if (!originalText) {
@@ -1023,7 +1256,7 @@ const processTextCommand = async (chatId, text) => {
             }
 
             if (!looksExpense && !looksIncome && !looksSub) {
-                bot.sendMessage(chatId, 'Не понял выбор. Ответьте: 1 (расход), 2 (доход) или 3 (подписка).');
+                bot.sendMessage(chatId, 'Не уловил тип операции. Напишите `расход`, `доход` или `подписка`. Можно цифрой: `1`, `2` или `3`.');
                 return;
             }
 
@@ -1034,12 +1267,12 @@ const processTextCommand = async (chatId, text) => {
 
             if (!title || title.length < 2) {
                 clearPending(chatId);
-                bot.sendMessage(chatId, 'Не вижу название 😅 Напишите, пожалуйста, что именно: например «кофе» или «Netflix».');
+                bot.sendMessage(chatId, 'Не вижу название записи. Напишите, например: «кофе» или «Netflix».');
                 return;
             }
             if (amount === null) {
                 clearPending(chatId);
-                bot.sendMessage(chatId, 'Не вижу сумму 😅 Напишите число, например: «6000₩» или «5$».');
+                bot.sendMessage(chatId, 'Не вижу сумму. Напишите число, например: «6000₩» или «5$».');
                 return;
             }
 
@@ -1065,8 +1298,8 @@ const processTextCommand = async (chatId, text) => {
                     };
                     await userDocRef.collection('expenses').add(expenseData);
                     clearPending(chatId);
-                    const dateStr = expenseData.spentAt ? new Date(expenseData.spentAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—';
-                    bot.sendMessage(chatId, `✅ Готово! Добавил расход "${title}" на сумму ${expenseData.currencySymbol}${Number(amount).toLocaleString()}.\nДата: ${dateStr}. 😊`);
+                    const dateStr = formatDateRu(expenseData.spentAt);
+                    bot.sendMessage(chatId, `Записал расход «${title}» на ${formatMoney(amount, expenseData.currencySymbol)}.\nДата: ${dateStr}.`);
                     return;
                 }
 
@@ -1086,8 +1319,8 @@ const processTextCommand = async (chatId, text) => {
                     };
                     await userDocRef.collection('incomes').add(incomeData);
                     clearPending(chatId);
-                    const dateStr = incomeData.receivedAt ? new Date(incomeData.receivedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—';
-                    bot.sendMessage(chatId, `✅ Готово! Добавил доход "${title}" на сумму ${incomeData.currencySymbol}${Number(amount).toLocaleString()}.\nДата: ${dateStr}. 😊`);
+                    const dateStr = formatDateRu(incomeData.receivedAt);
+                    bot.sendMessage(chatId, `Записал доход «${title}» на ${formatMoney(amount, incomeData.currencySymbol)}.\nДата: ${dateStr}.`);
                     return;
                 }
 
@@ -1106,15 +1339,13 @@ const processTextCommand = async (chatId, text) => {
                 };
                 await userDocRef.collection('subscriptions').add(subscriptionData);
                 clearPending(chatId);
-                const dateStr = subscriptionData.nextPaymentDate
-                    ? new Date(subscriptionData.nextPaymentDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
-                    : '—';
-                bot.sendMessage(chatId, `✅ Готово! Добавил подписку "${subscriptionData.name}" на сумму ${subscriptionData.currencySymbol}${Number(subscriptionData.cost).toLocaleString()}.\nСледующий платеж: ${dateStr}. 😊`);
+                const dateStr = formatDateRu(subscriptionData.nextPaymentDate);
+                bot.sendMessage(chatId, `Добавил подписку «${subscriptionData.name}» за ${formatMoney(subscriptionData.cost, subscriptionData.currencySymbol)}.\nСледующий платёж: ${dateStr}.`);
                 return;
             } catch (e) {
                 console.error('[BOT] clarify_add_type finalize error:', e);
                 clearPending(chatId);
-                bot.sendMessage(chatId, '😔 Не получилось сохранить. Попробуйте, пожалуйста, ещё раз чуть позже.');
+                bot.sendMessage(chatId, 'Не получилось сохранить запись. Попробуйте ещё раз чуть позже.');
                 return;
             }
         }
@@ -1125,20 +1356,20 @@ const processTextCommand = async (chatId, text) => {
             if (pending.step === 'ask_name') {
                 const name = normalized.trim();
                 if (!name || name.length < 2) {
-                    bot.sendMessage(chatId, 'Название должно быть хотя бы 2 символа 🙂 Как называется сервис?');
+                    bot.sendMessage(chatId, 'Нужно название хотя бы из 2 символов. Как называется сервис?');
                     return;
                 }
                 current.name = name;
                 // next ask cost
                 setPending(chatId, { type: 'add', step: 'ask_cost', data: current });
-                bot.sendMessage(chatId, `Окей, *${current.name}*. А какая стоимость? Например: «1000 тг».`, { parse_mode: 'Markdown' });
+                bot.sendMessage(chatId, `Принял: *${current.name}*. Какая стоимость? Например: «1000 тг».`, { parse_mode: 'Markdown' });
                 return;
             }
 
             if (pending.step === 'ask_cost') {
                 const cost = extractCost(normalized);
                 if (cost === null) {
-                    bot.sendMessage(chatId, 'Не увидел сумму 😅 Напишите число, например: «1000 тг» или «5$».');
+                    bot.sendMessage(chatId, 'Не увидел сумму. Напишите число, например: «1000 тг» или «5$».');
                     return;
                 }
                 const { code, symbol } = detectCurrency(normalized);
@@ -1149,7 +1380,7 @@ const processTextCommand = async (chatId, text) => {
                 setPending(chatId, { type: 'add', step: 'ask_date', data: current });
                 bot.sendMessage(
                     chatId,
-                    'Когда следующий платеж?\nНапример: «12 числа», «17 февраля», «завтра», «17.02».\nЕсли дата не важна — напишите «пропустить».'
+                    'Когда следующий платёж?\nНапример: «12 числа», «17 февраля», «завтра», «17.02».\nЕсли дата не важна, напишите «пропустить».'
                 );
                 return;
             }
@@ -1202,18 +1433,16 @@ const processTextCommand = async (chatId, text) => {
                     await userDocRef.collection('subscriptions').add(subscriptionData);
                     clearPending(chatId);
 
-                    const dateStr = subscriptionData.nextPaymentDate
-                        ? new Date(subscriptionData.nextPaymentDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
-                        : '—';
+                    const dateStr = formatDateRu(subscriptionData.nextPaymentDate);
                     bot.sendMessage(
                         chatId,
-                        `✅ Готово! Добавил подписку "${subscriptionData.name}" на сумму ${subscriptionData.currencySymbol}${Number(subscriptionData.cost).toLocaleString()}.\nСледующий платеж: ${dateStr}. 😊`
+                        `Добавил подписку «${subscriptionData.name}» за ${formatMoney(subscriptionData.cost, subscriptionData.currencySymbol)}.\nСледующий платёж: ${dateStr}.`
                     );
                     return;
                 } catch (e) {
                     console.error('[BOT] Pending add finalize error:', e);
                     clearPending(chatId);
-                    bot.sendMessage(chatId, '😔 Не получилось сохранить подписку. Попробуйте, пожалуйста, ещё раз чуть позже.');
+                    bot.sendMessage(chatId, 'Не получилось сохранить подписку. Попробуйте ещё раз чуть позже.');
                     return;
                 }
             }
@@ -1231,7 +1460,7 @@ const processTextCommand = async (chatId, text) => {
                 chosen = options.find(o => String(o.name || '').toLowerCase() === answer.toLowerCase()) || null;
             }
             if (!chosen) {
-                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер (например 1) или точное название из списка.');
+                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер из списка или точное название.');
                 return;
             }
             try {
@@ -1258,7 +1487,7 @@ const processTextCommand = async (chatId, text) => {
                 chosen = options.find(o => String(o.name || '').toLowerCase() === answer.toLowerCase()) || null;
             }
             if (!chosen) {
-                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер (например 1) или точное название из списка.');
+                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер из списка или точное название.');
                 return;
             }
             try {
@@ -1285,7 +1514,7 @@ const processTextCommand = async (chatId, text) => {
                 chosen = options.find(o => String(o.name || '').toLowerCase() === answer.toLowerCase()) || null;
             }
             if (!chosen) {
-                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер (например 1) или точное название из списка.');
+                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер из списка или точное название.');
                 return;
             }
             try {
@@ -1312,7 +1541,7 @@ const processTextCommand = async (chatId, text) => {
                 chosen = options.find(o => String(o.name || '').toLowerCase() === answer.toLowerCase()) || null;
             }
             if (!chosen) {
-                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер (например 1) или точное название из списка.');
+                bot.sendMessage(chatId, 'Не понял выбор. Напишите номер из списка или точное название.');
                 return;
             }
             try {
@@ -1440,11 +1669,11 @@ const processTextCommand = async (chatId, text) => {
         const title = slots.title;
 
         if (!title || title.length < 2) {
-            bot.sendMessage(chatId, 'Как назвать расход? Например: «Расход 12000 вон кафе сегодня». 🙂');
+            bot.sendMessage(chatId, 'Не понял, как назвать расход. Например: «Расход 12000 вон кафе сегодня».');
             return;
         }
         if (amount === null) {
-            bot.sendMessage(chatId, `Окей, *${title}*. А какая сумма? Например: «5000₩» или «1000 тг».`, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `Понял название: *${title}*. Какая сумма? Например: «5000₩» или «1000 тг».`, { parse_mode: 'Markdown' });
             return;
         }
 
@@ -1478,12 +1707,12 @@ const processTextCommand = async (chatId, text) => {
             }
 
             await userDocRef.collection('expenses').add(expenseData);
-            const dateStr = spentAt ? new Date(spentAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—';
-            bot.sendMessage(chatId, `✅ Готово! Добавил расход "${title}" на сумму ${expenseData.currencySymbol}${Number(amount).toLocaleString()}.\nДата: ${dateStr}. 😊`);
+            const dateStr = formatDateRu(spentAt);
+            bot.sendMessage(chatId, `Записал расход «${title}» на ${formatMoney(amount, expenseData.currencySymbol)}.\nДата: ${dateStr}.`);
             return;
         } catch (e) {
             console.error('[BOT] Error adding expense:', e);
-            bot.sendMessage(chatId, '😔 Не получилось добавить расход. Попробуйте, пожалуйста, ещё раз чуть позже.');
+            bot.sendMessage(chatId, 'Не получилось добавить расход. Попробуйте ещё раз чуть позже.');
             return;
         }
     }
@@ -1495,11 +1724,11 @@ const processTextCommand = async (chatId, text) => {
         const title = slots.title;
 
         if (!title || title.length < 2) {
-            bot.sendMessage(chatId, 'Как назвать доход? Например: «Доход 500000₩ зарплата сегодня». 🙂');
+            bot.sendMessage(chatId, 'Не понял, как назвать доход. Например: «Доход 500000₩ зарплата сегодня».');
             return;
         }
         if (amount === null) {
-            bot.sendMessage(chatId, `Окей, *${title}*. А какая сумма? Например: «5000₩» или «1000 тг».`, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `Понял название: *${title}*. Какая сумма? Например: «5000₩» или «1000 тг».`, { parse_mode: 'Markdown' });
             return;
         }
 
@@ -1533,12 +1762,12 @@ const processTextCommand = async (chatId, text) => {
             }
 
             await userDocRef.collection('incomes').add(incomeData);
-            const dateStr = receivedAt ? new Date(receivedAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—';
-            bot.sendMessage(chatId, `✅ Готово! Добавил доход "${title}" на сумму ${incomeData.currencySymbol}${Number(amount).toLocaleString()}.\nДата: ${dateStr}. 😊`);
+            const dateStr = formatDateRu(receivedAt);
+            bot.sendMessage(chatId, `Записал доход «${title}» на ${formatMoney(amount, incomeData.currencySymbol)}.\nДата: ${dateStr}.`);
             return;
         } catch (e) {
             console.error('[BOT] Error adding income:', e);
-            bot.sendMessage(chatId, '😔 Не получилось добавить доход. Попробуйте, пожалуйста, ещё раз чуть позже.');
+            bot.sendMessage(chatId, 'Не получилось добавить доход. Попробуйте ещё раз чуть позже.');
             return;
         }
     }
@@ -1554,12 +1783,12 @@ const processTextCommand = async (chatId, text) => {
 
         if (!name || name.length < 2) {
             setPending(chatId, { type: 'add', step: 'ask_name', data: {} });
-            bot.sendMessage(chatId, 'Подскажите, пожалуйста, *какой сервис* добавить? 🙂\nНапример: «Netflix».', { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, 'Какой сервис добавить?\nНапример: «Netflix».', { parse_mode: 'Markdown' });
             return;
         }
         if (cost === null) {
             setPending(chatId, { type: 'add', step: 'ask_cost', data: { name } });
-            bot.sendMessage(chatId, `Окей, добавим *${name}* 🙂\nСкажите, пожалуйста, *стоимость* (например: «1000 тг» или «5$»).`, { parse_mode: 'Markdown' });
+            bot.sendMessage(chatId, `Понял сервис: *${name}*.\nТеперь нужна стоимость, например: «1000 тг» или «5$».`, { parse_mode: 'Markdown' });
             return;
         }
 
@@ -1597,12 +1826,12 @@ const processTextCommand = async (chatId, text) => {
             console.log(`[BOT] ADD user=${chatId} name="${name}" cost=${cost} ${code} category="${categoryName || 'Общие'}"`);
             await userDocRef.collection('subscriptions').add(subscriptionData);
 
-            const dateStr = date ? new Date(date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—';
-            bot.sendMessage(chatId, `✅ Готово! Добавил подписку "${name}" на сумму ${symbol}${cost.toLocaleString()}.\nСледующий платеж: ${dateStr}. 😊`);
+            const dateStr = formatDateRu(date);
+            bot.sendMessage(chatId, `Добавил подписку «${name}» за ${formatMoney(cost, symbol)}.\nСледующий платёж: ${dateStr}.`);
             return;
         } catch (e) {
             console.error('[BOT] Error adding subscription:', e);
-            bot.sendMessage(chatId, '😔 Не получилось добавить подписку из‑за ошибки. Попробуйте, пожалуйста, ещё раз чуть позже.');
+            bot.sendMessage(chatId, 'Не получилось добавить подписку. Попробуйте ещё раз чуть позже.');
             return;
         }
     }
@@ -1966,7 +2195,7 @@ const processTextCommand = async (chatId, text) => {
         const amount = slots.amount;
         const title = slots.title;
         if (!title || title.length < 2 || amount === null) {
-            bot.sendMessage(chatId, `🤔 Я понял, что вы хотите что-то записать, но не вижу достаточно данных.\n\n${buildHelpMessage()}`);
+            bot.sendMessage(chatId, buildQuickExamplesMessage('Не хватает данных, чтобы что-то записать.'));
             return;
         }
 
@@ -1978,18 +2207,19 @@ const processTextCommand = async (chatId, text) => {
 
         bot.sendMessage(
             chatId,
-            'Я понял данные, но не понял *тип операции*.\nВыберите:\n1) Расход\n2) Доход\n3) Подписка\n\nОтветьте цифрой (1/2/3).',
+            buildClarifyAddTypeMessage(slots),
             { parse_mode: 'Markdown' }
         );
         return;
     }
 
     // Default fallback
-    bot.sendMessage(chatId, `🤔 Не понял, что именно сделать.\n\n${buildHelpMessage()}`);
+    bot.sendMessage(chatId, buildQuickExamplesMessage('Не до конца понял запрос.'));
 };
 
 // Helper function to ensure user document exists
 const ensureUserExists = async (chatId) => {
+    if (!db) return;
     try {
         const userDocRef = db.collection('users').doc(String(chatId));
         const userDoc = await userDocRef.get();
@@ -2128,7 +2358,7 @@ bot.on('voice', async (msg) => {
 
     if (!openaiApiKey) {
         console.warn('[BOT] OPENAI_API_KEY not set, voice recognition disabled');
-        bot.sendMessage(chatId, '😔 Извините, распознавание голоса временно недоступно. Пожалуйста, напишите текстом. 🙏');
+        bot.sendMessage(chatId, 'Распознавание голоса сейчас недоступно. Напишите, пожалуйста, текстом.');
         return;
     }
 
@@ -2147,7 +2377,7 @@ bot.on('voice', async (msg) => {
 
     try {
         // Show user that bot is processing audio
-        processingMsg = await bot.sendMessage(chatId, '🎤 Слушаю ваше сообщение... Пожалуйста, подождите немного! 😊');
+        processingMsg = await bot.sendMessage(chatId, 'Обрабатываю голосовое сообщение. Это займёт несколько секунд.');
         console.log(`[BOT] Processing voice message for user ${chatId}`);
 
         // Download audio file
@@ -2181,7 +2411,7 @@ bot.on('voice', async (msg) => {
         }
 
         if (!transcribedText || transcribedText.trim().length === 0) {
-            bot.sendMessage(chatId, '😔 Извините, не удалось распознать речь. Пожалуйста, попробуйте записать сообщение еще раз или напишите текстом. 🎤');
+            bot.sendMessage(chatId, 'Не удалось распознать речь. Попробуйте записать сообщение ещё раз или напишите текстом.');
             return;
         }
 
@@ -2206,8 +2436,8 @@ bot.on('voice', async (msg) => {
         }
 
         // Send user-friendly error message
-        const errorMessage = error.message || 'Неизвестная ошибка';
-        bot.sendMessage(chatId, `😔 Извините, произошла ошибка при обработке голосового сообщения. Пожалуйста, попробуйте написать текстом или записать сообщение еще раз. 🙏`);
+        const _errorMessage = error.message || 'Неизвестная ошибка';
+        bot.sendMessage(chatId, 'Не получилось обработать голосовое сообщение. Попробуйте ещё раз или напишите текстом.');
     }
 });
 
@@ -2427,8 +2657,8 @@ server.listen(PORT, () => {
     // Make an immediate health check to verify it works
     setTimeout(() => {
         http.get(`http://localhost:${PORT}/health`, (res) => {
-            let data = '';
-            res.on('data', (chunk) => { data += chunk; });
+            let _data = '';
+            res.on('data', (chunk) => { _data += chunk; });
             res.on('end', () => {
                 console.log(`✅ Health check verified: ${res.statusCode}`);
             });
@@ -2495,4 +2725,4 @@ console.log('='.repeat(50));
 } // end RUN_MODE === 'bot'
 
 // Expose NLU helpers for self-tests / tooling
-export { detectIntentV2, extractSlotsV2, detectLanguage, normalizeText, extractCategory };
+export { detectIntentV2, extractSlotsV2, detectLanguage, normalizeText, extractCategory, processTextCommand, selftestRuntime };

@@ -1,8 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, onSnapshot, query, updateDoc, writeBatch } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, query, updateDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { validateAndSanitizeExpense } from '../lib/validation';
+import {
+    applyOrderUpdates,
+    buildReorderUpdates,
+    commitOrderUpdates,
+    mapSnapshotDocs,
+    sortByOrderThenDate
+} from '../lib/orderedCollections';
 
 /* eslint-disable react-refresh/only-export-components */
 const ExpenseContext = createContext();
@@ -23,38 +30,19 @@ export function ExpenseProvider({ children }) {
         const qExpenses = query(collection(db, 'users', user.uid, 'expenses'));
 
         const unsub = onSnapshot(qExpenses, (querySnapshot) => {
-            const items = [];
-            querySnapshot.forEach((d) => {
-                const data = d.data();
-                const processed = { ...data };
-
-                // Normalize potential Firestore Timestamp fields
-                if (data.createdAt && data.createdAt.toDate) {
-                    processed.createdAt = data.createdAt.toDate().toISOString();
-                }
-                if (data.spentAt && data.spentAt.toDate) {
-                    processed.spentAt = data.spentAt.toDate().toISOString();
-                }
-
-                items.push({ id: d.id, ...processed });
-            });
-            // Sort by order field, then by spentAt/createdAt if order is missing
-            items.sort((a, b) => {
-                const aOrder = a.order !== undefined ? a.order : Infinity;
-                const bOrder = b.order !== undefined ? b.order : Infinity;
-                if (aOrder !== bOrder) {
-                    return aOrder - bOrder;
-                }
-                // If order is the same or missing, sort newest first
-                const aTime = new Date(a.spentAt || a.createdAt || 0).getTime();
-                const bTime = new Date(b.spentAt || b.createdAt || 0).getTime();
-                return bTime - aTime;
-            });
+            const items = sortByOrderThenDate(
+                mapSnapshotDocs(querySnapshot, ['createdAt', 'spentAt']),
+                ['spentAt', 'createdAt']
+            );
+            if (import.meta.env.DEV) {
+                console.log('[EXPENSES] Loaded', items.length, 'for uid:', user.uid, 'path: users/' + user.uid + '/expenses');
+            }
             setExpenses(items);
             setLoadedUid(user.uid);
             setLoadError(null);
         }, (error) => {
             console.error('[EXPENSES] Snapshot error:', error);
+            setExpenses([]);
             setLoadedUid(user.uid);
             setLoadError(error);
         });
@@ -67,14 +55,12 @@ export function ExpenseProvider({ children }) {
     const visibleExpenses = effectiveUid && loadedUid === effectiveUid ? expenses : [];
 
     const addExpense = async (expense) => {
+        const newOrder = -Date.now();
         if (!user || user.uid === 'demo_user') {
-            const maxOrder = expenses.length > 0 
-                ? Math.max(...expenses.map(e => e.order || 0))
-                : -1;
             const newItem = { 
                 ...expense, 
                 id: Date.now().toString(), 
-                order: maxOrder + 1,
+                order: newOrder,
                 createdAt: new Date().toISOString() 
             };
             setExpenses((prev) => [newItem, ...prev]);
@@ -87,13 +73,9 @@ export function ExpenseProvider({ children }) {
             return;
         }
 
-        const maxOrder = expenses.length > 0 
-            ? Math.max(...expenses.map(e => e.order || 0))
-            : -1;
-
         await addDoc(collection(db, 'users', user.uid, 'expenses'), {
             ...validation.data,
-            order: maxOrder + 1,
+            order: newOrder,
             createdAt: new Date().toISOString()
         });
     };
@@ -124,45 +106,20 @@ export function ExpenseProvider({ children }) {
 
     const reorderExpenses = async (oldIndex, newIndex) => {
         if (oldIndex === newIndex) return;
-        
-        const sortedExpenses = [...expenses].sort((a, b) => {
-            const aOrder = a.order !== undefined ? a.order : Infinity;
-            const bOrder = b.order !== undefined ? b.order : Infinity;
-            if (aOrder !== bOrder) {
-                return aOrder - bOrder;
-            }
-            const aTime = new Date(a.spentAt || a.createdAt || 0).getTime();
-            const bTime = new Date(b.spentAt || b.createdAt || 0).getTime();
-            return bTime - aTime;
-        });
-        
-        const [movedItem] = sortedExpenses.splice(oldIndex, 1);
-        sortedExpenses.splice(newIndex, 0, movedItem);
-        
-        // Update orders
-        const updates = sortedExpenses.map((expense, index) => ({
-            id: expense.id,
-            order: index
-        }));
-        
+
+        const updates = buildReorderUpdates(
+            sortByOrderThenDate(expenses, ['spentAt', 'createdAt']),
+            oldIndex,
+            newIndex
+        );
+
         if (!user || user.uid === 'demo_user') {
-            // Update local state
-            const updatedExpenses = expenses.map(expense => {
-                const update = updates.find(u => u.id === expense.id);
-                return update ? { ...expense, order: update.order } : expense;
-            });
-            setExpenses(updatedExpenses);
+            setExpenses((prev) => applyOrderUpdates(prev, updates));
             return;
         }
-        
-        // Update Firestore in batch
+
         try {
-            const batch = writeBatch(db);
-            updates.forEach(({ id, order }) => {
-                const expenseRef = doc(db, 'users', user.uid, 'expenses', id);
-                batch.update(expenseRef, { order });
-            });
-            await batch.commit();
+            await commitOrderUpdates(db, user.uid, 'expenses', updates);
         } catch (error) {
             console.error('[EXPENSES] Error reordering expenses:', error);
             alert('Ошибка при изменении порядка расходов');
@@ -173,6 +130,7 @@ export function ExpenseProvider({ children }) {
         <ExpenseContext.Provider value={{
             expenses: visibleExpenses,
             loading,
+            loadError,
             addExpense,
             removeExpense,
             updateExpense,

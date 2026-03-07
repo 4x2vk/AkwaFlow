@@ -6,6 +6,20 @@ import { Card } from '../components/ui/Card';
 import { useSubscriptions } from '../context/SubscriptionContext';
 import { useExpenses } from '../context/ExpenseContext';
 import { useIncomes } from '../context/IncomeContext';
+import {
+    buildMonthlyCompareData,
+    getItemsByCategoryForMonth,
+    getMonthlyAmountSeries,
+    getPrimaryCurrency,
+    getSubscriptionByCategory,
+    getSubscriptionMonthlyByCurrency,
+    getSubscriptionMonthlyTotal,
+    getTotalsByCurrencyForMonth,
+    getTotalsByCurrencyForYear,
+    mergeCurrencyTotals,
+    subtractCurrencyTotals,
+    toYearlyByCurrency
+} from '../lib/analyticsSelectors';
 
 export default function Analytics() {
     const { subscriptions } = useSubscriptions();
@@ -20,234 +34,138 @@ export default function Analytics() {
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
 
-    const toYearlyByCurrency = (monthlyByCurrency) => {
-        const out = {};
-        Object.entries(monthlyByCurrency).forEach(([sym, amount]) => {
-            out[sym] = Number(amount || 0) * 12;
-        });
-        return out;
-    };
-
-    const getMonthLabels = () => ([
-        { name: 'Янв', month: 0 },
-        { name: 'Фев', month: 1 },
-        { name: 'Мар', month: 2 },
-        { name: 'Апр', month: 3 },
-        { name: 'Май', month: 4 },
-        { name: 'Июн', month: 5 },
-        { name: 'Июл', month: 6 },
-        { name: 'Авг', month: 7 },
-        { name: 'Сен', month: 8 },
-        { name: 'Окт', month: 9 },
-        { name: 'Ноя', month: 10 },
-        { name: 'Дек', month: 11 },
-    ]);
-
     // "Stable subscriptions" = monthly equivalent
-    const subscriptionMonthlyByCurrency = useMemo(() => {
-        return subscriptions.reduce((acc, sub) => {
-            const sym = sub.currencySymbol || '₩';
-            const billingPeriod = sub.billingPeriod || (sub.cycle && sub.cycle.includes('год') ? 'yearly' : 'monthly');
-            const cost = Number(sub.cost || 0);
-            const monthlyEquivalent = billingPeriod === 'yearly' ? (cost / 12) : cost;
-            acc[sym] = (acc[sym] || 0) + monthlyEquivalent;
-            return acc;
-        }, {});
-    }, [subscriptions]);
+    const subscriptionMonthlyByCurrency = useMemo(
+        () => getSubscriptionMonthlyByCurrency(subscriptions),
+        [subscriptions]
+    );
 
-    const expenseThisMonthByCurrency = useMemo(() => {
-        return expenses.reduce((acc, e) => {
-            if (!e?.spentAt) return acc;
-            const d = new Date(e.spentAt);
-            if (isNaN(d.getTime())) return acc;
-            if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return acc;
-            const sym = e.currencySymbol || '₩';
-            acc[sym] = (acc[sym] || 0) + Number(e.amount || 0);
-            return acc;
-        }, {});
-    }, [expenses, currentMonth, currentYear]);
+    const expenseThisMonthByCurrency = useMemo(
+        () => getTotalsByCurrencyForMonth(expenses, {
+            dateField: 'spentAt',
+            year: currentYear,
+            month: currentMonth
+        }),
+        [currentMonth, currentYear, expenses]
+    );
 
-    const incomeThisMonthByCurrency = useMemo(() => {
-        return incomes.reduce((acc, e) => {
-            if (!e?.receivedAt) return acc;
-            const d = new Date(e.receivedAt);
-            if (isNaN(d.getTime())) return acc;
-            if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return acc;
-            const sym = e.currencySymbol || '₩';
-            acc[sym] = (acc[sym] || 0) + Number(e.amount || 0);
-            return acc;
-        }, {});
-    }, [currentMonth, currentYear, incomes]);
+    const incomeThisMonthByCurrency = useMemo(
+        () => getTotalsByCurrencyForMonth(incomes, {
+            dateField: 'receivedAt',
+            year: currentYear,
+            month: currentMonth
+        }),
+        [currentMonth, currentYear, incomes]
+    );
 
-    const expensePlusSubsThisMonthByCurrency = useMemo(() => {
-        const combined = { ...expenseThisMonthByCurrency };
-        Object.entries(subscriptionMonthlyByCurrency).forEach(([sym, amount]) => {
-            combined[sym] = (combined[sym] || 0) + Number(amount || 0);
-        });
-        return combined;
-    }, [expenseThisMonthByCurrency, subscriptionMonthlyByCurrency]);
+    const expensePlusSubsThisMonthByCurrency = useMemo(
+        () => mergeCurrencyTotals(expenseThisMonthByCurrency, subscriptionMonthlyByCurrency),
+        [expenseThisMonthByCurrency, subscriptionMonthlyByCurrency]
+    );
 
-    const netThisMonthByCurrency = useMemo(() => {
-        const allSyms = new Set([
-            ...Object.keys(incomeThisMonthByCurrency),
-            ...Object.keys(expensePlusSubsThisMonthByCurrency)
-        ]);
-        const out = {};
-        allSyms.forEach((sym) => {
-            out[sym] = Number(incomeThisMonthByCurrency[sym] || 0) - Number(expensePlusSubsThisMonthByCurrency[sym] || 0);
-        });
-        return out;
-    }, [expensePlusSubsThisMonthByCurrency, incomeThisMonthByCurrency]);
+    const netThisMonthByCurrency = useMemo(
+        () => subtractCurrencyTotals(incomeThisMonthByCurrency, expensePlusSubsThisMonthByCurrency),
+        [expensePlusSubsThisMonthByCurrency, incomeThisMonthByCurrency]
+    );
 
-    const expenseThisYearByCurrency = useMemo(() => {
-        return expenses.reduce((acc, e) => {
-            if (!e?.spentAt) return acc;
-            const d = new Date(e.spentAt);
-            if (isNaN(d.getTime())) return acc;
-            if (d.getFullYear() !== currentYear) return acc;
-            if (d.getMonth() > currentMonth) return acc; // don't count future months
-            const sym = e.currencySymbol || '₩';
-            acc[sym] = (acc[sym] || 0) + Number(e.amount || 0);
-            return acc;
-        }, {});
-    }, [currentMonth, currentYear, expenses]);
+    const expenseThisYearByCurrency = useMemo(
+        () => getTotalsByCurrencyForYear(expenses, {
+            dateField: 'spentAt',
+            year: currentYear,
+            maxMonth: currentMonth
+        }),
+        [currentMonth, currentYear, expenses]
+    );
 
-    const incomeThisYearByCurrency = useMemo(() => {
-        return incomes.reduce((acc, e) => {
-            if (!e?.receivedAt) return acc;
-            const d = new Date(e.receivedAt);
-            if (isNaN(d.getTime())) return acc;
-            if (d.getFullYear() !== currentYear) return acc;
-            if (d.getMonth() > currentMonth) return acc; // don't count future months
-            const sym = e.currencySymbol || '₩';
-            acc[sym] = (acc[sym] || 0) + Number(e.amount || 0);
-            return acc;
-        }, {});
-    }, [currentMonth, currentYear, incomes]);
+    const incomeThisYearByCurrency = useMemo(
+        () => getTotalsByCurrencyForYear(incomes, {
+            dateField: 'receivedAt',
+            year: currentYear,
+            maxMonth: currentMonth
+        }),
+        [currentMonth, currentYear, incomes]
+    );
 
     const subscriptionYearlyByCurrency = useMemo(() => {
         return toYearlyByCurrency(subscriptionMonthlyByCurrency);
     }, [subscriptionMonthlyByCurrency]);
 
-    const expensePlusSubsThisYearByCurrency = useMemo(() => {
-        const combined = { ...expenseThisYearByCurrency };
-        Object.entries(subscriptionYearlyByCurrency).forEach(([sym, amount]) => {
-            combined[sym] = (combined[sym] || 0) + Number(amount || 0);
-        });
-        return combined;
-    }, [expenseThisYearByCurrency, subscriptionYearlyByCurrency]);
+    const expensePlusSubsThisYearByCurrency = useMemo(
+        () => mergeCurrencyTotals(expenseThisYearByCurrency, subscriptionYearlyByCurrency),
+        [expenseThisYearByCurrency, subscriptionYearlyByCurrency]
+    );
 
-    const netThisYearByCurrency = useMemo(() => {
-        const allSyms = new Set([
-            ...Object.keys(incomeThisYearByCurrency),
-            ...Object.keys(expensePlusSubsThisYearByCurrency)
-        ]);
-        const out = {};
-        allSyms.forEach((sym) => {
-            out[sym] = Number(incomeThisYearByCurrency[sym] || 0) - Number(expensePlusSubsThisYearByCurrency[sym] || 0);
-        });
-        return out;
-    }, [expensePlusSubsThisYearByCurrency, incomeThisYearByCurrency]);
+    const netThisYearByCurrency = useMemo(
+        () => subtractCurrencyTotals(incomeThisYearByCurrency, expensePlusSubsThisYearByCurrency),
+        [expensePlusSubsThisYearByCurrency, incomeThisYearByCurrency]
+    );
 
-    const primaryCurrency = useMemo(() => {
-        const allSyms = Object.keys(subscriptionMonthlyByCurrency);
-        if (allSyms.length > 0) return allSyms[0];
-        const expSyms = Object.keys(expenseThisMonthByCurrency);
-        if (expSyms.length > 0) return expSyms[0];
-        const incSyms = Object.keys(incomeThisMonthByCurrency);
-        return incSyms[0] || '₩';
-    }, [expenseThisMonthByCurrency, incomeThisMonthByCurrency, subscriptionMonthlyByCurrency]);
+    const primaryCurrency = useMemo(
+        () => getPrimaryCurrency(
+            subscriptionMonthlyByCurrency,
+            expenseThisMonthByCurrency,
+            incomeThisMonthByCurrency
+        ),
+        [expenseThisMonthByCurrency, incomeThisMonthByCurrency, subscriptionMonthlyByCurrency]
+    );
 
-    const subscriptionMonthlyTotal = useMemo(() => {
-        return subscriptions.reduce((sum, sub) => {
-            const billingPeriod = sub.billingPeriod || (sub.cycle && sub.cycle.includes('год') ? 'yearly' : 'monthly');
-            const cost = Number(sub.cost || 0);
-            const monthlyEquivalent = billingPeriod === 'yearly' ? (cost / 12) : cost;
-            return sum + monthlyEquivalent;
-        }, 0);
-    }, [subscriptions]);
+    const subscriptionMonthlyTotal = useMemo(
+        () => getSubscriptionMonthlyTotal(subscriptions),
+        [subscriptions]
+    );
 
-    const expenseMonthlyTotals = useMemo(() => {
-        const months = getMonthLabels().map((m) => ({ ...m, expenses: 0 }));
-        expenses.forEach((e) => {
-            if (!e?.spentAt) return;
-            const d = new Date(e.spentAt);
-            if (isNaN(d.getTime())) return;
-            if (d.getFullYear() !== currentYear) return;
-            months[d.getMonth()].expenses += Number(e.amount || 0);
-        });
-        return months;
-    }, [expenses, currentYear]);
+    const expenseMonthlyTotals = useMemo(
+        () => getMonthlyAmountSeries(expenses, {
+            dateField: 'spentAt',
+            valueKey: 'expenses',
+            year: currentYear
+        }),
+        [currentYear, expenses]
+    );
 
-    const incomeMonthlyTotals = useMemo(() => {
-        const months = getMonthLabels().map((m) => ({ ...m, income: 0 }));
-        incomes.forEach((e) => {
-            if (!e?.receivedAt) return;
-            const d = new Date(e.receivedAt);
-            if (isNaN(d.getTime())) return;
-            if (d.getFullYear() !== currentYear) return;
-            months[d.getMonth()].income += Number(e.amount || 0);
-        });
-        return months;
-    }, [currentYear, incomes]);
+    const incomeMonthlyTotals = useMemo(
+        () => getMonthlyAmountSeries(incomes, {
+            dateField: 'receivedAt',
+            valueKey: 'income',
+            year: currentYear
+        }),
+        [currentYear, incomes]
+    );
 
-    const monthlyCompareData = useMemo(() => {
-        return getMonthLabels()
-            .filter((m) => m.month <= currentMonth)
-            .map((m) => {
-            const exp = expenseMonthlyTotals.find((x) => x.month === m.month)?.expenses || 0;
-            const inc = incomeMonthlyTotals.find((x) => x.month === m.month)?.income || 0;
-            return {
-                name: m.name,
-                month: m.month,
-                income: inc,
-                subscriptions: subscriptionMonthlyTotal,
-                expenses: exp,
-                net: inc - (subscriptionMonthlyTotal + exp)
-            };
-        });
-    }, [currentMonth, expenseMonthlyTotals, incomeMonthlyTotals, subscriptionMonthlyTotal]);
+    const monthlyCompareData = useMemo(
+        () => buildMonthlyCompareData({
+            currentMonth,
+            expenseMonthlyTotals,
+            incomeMonthlyTotals,
+            subscriptionMonthlyTotal
+        }),
+        [currentMonth, expenseMonthlyTotals, incomeMonthlyTotals, subscriptionMonthlyTotal]
+    );
 
-    const subscriptionByCategory = useMemo(() => {
-        const map = {};
-        subscriptions.forEach((sub) => {
-            const cat = sub.category || 'Общие';
-            const billingPeriod = sub.billingPeriod || (sub.cycle && sub.cycle.includes('год') ? 'yearly' : 'monthly');
-            const cost = Number(sub.cost || 0);
-            const monthlyEquivalent = billingPeriod === 'yearly' ? (cost / 12) : cost;
-            if (!map[cat]) map[cat] = { name: cat, value: 0, color: sub.color || '#6B7280' };
-            map[cat].value += monthlyEquivalent;
-        });
-        return Object.values(map).filter((d) => d.value > 0);
-    }, [subscriptions]);
+    const subscriptionByCategory = useMemo(
+        () => getSubscriptionByCategory(subscriptions),
+        [subscriptions]
+    );
 
-    const expenseByCategoryThisMonth = useMemo(() => {
-        const map = {};
-        expenses.forEach((e) => {
-            if (!e?.spentAt) return;
-            const d = new Date(e.spentAt);
-            if (isNaN(d.getTime())) return;
-            if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return;
-            const cat = e.category || 'Общие';
-            if (!map[cat]) map[cat] = { name: cat, value: 0, color: e.color || '#6B7280' };
-            map[cat].value += Number(e.amount || 0);
-        });
-        return Object.values(map).filter((d) => d.value > 0);
-    }, [currentMonth, currentYear, expenses]);
+    const expenseByCategoryThisMonth = useMemo(
+        () => getItemsByCategoryForMonth(expenses, {
+            dateField: 'spentAt',
+            year: currentYear,
+            month: currentMonth,
+            fallbackColor: '#6B7280'
+        }),
+        [currentMonth, currentYear, expenses]
+    );
 
-    const incomeByCategoryThisMonth = useMemo(() => {
-        const map = {};
-        incomes.forEach((e) => {
-            if (!e?.receivedAt) return;
-            const d = new Date(e.receivedAt);
-            if (isNaN(d.getTime())) return;
-            if (d.getFullYear() !== currentYear || d.getMonth() !== currentMonth) return;
-            const cat = e.category || 'Общие';
-            if (!map[cat]) map[cat] = { name: cat, value: 0, color: e.color || '#22C55E' };
-            map[cat].value += Number(e.amount || 0);
-        });
-        return Object.values(map).filter((d) => d.value > 0);
-    }, [currentMonth, currentYear, incomes]);
+    const incomeByCategoryThisMonth = useMemo(
+        () => getItemsByCategoryForMonth(incomes, {
+            dateField: 'receivedAt',
+            year: currentYear,
+            month: currentMonth,
+            fallbackColor: '#22C55E'
+        }),
+        [currentMonth, currentYear, incomes]
+    );
 
     const RADIAN = Math.PI / 180;
     const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }) => {

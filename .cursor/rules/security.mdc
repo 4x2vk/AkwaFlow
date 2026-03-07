@@ -1,0 +1,12 @@
+---
+description: Basic security requirements
+alwaysApply: false
+globs: 
+---
+
+# Security
+
+- Секреты только в `.env`, никогда в коде
+- Firestore rules проверяй при изменении схемы
+- Валидация на бэкенде (Cloud Functions) и в use cases
+- Не экспонировать `service-account.json` — в `.gitignore`

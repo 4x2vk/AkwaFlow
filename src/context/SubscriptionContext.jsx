@@ -1,8 +1,26 @@
+/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-hooks/set-state-in-effect */
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { collection, query, onSnapshot, addDoc, deleteDoc, updateDoc, doc, getDocs, setDoc, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { validateAndSanitizeSubscription } from '../lib/validation';
+import {
+    applyOrderUpdates,
+    buildReorderUpdates,
+    commitOrderUpdates,
+    getNextOrder
+} from '../lib/orderedCollections';
+import {
+    addUserCollectionDoc,
+    createDemoEntity,
+    deleteUserCollectionDoc,
+    ensureUserExists,
+    isDemoUser,
+    mapCategoryItems,
+    mapSubscriptionItems,
+    updateUserCollectionDoc
+} from './subscriptionContextUtils';
 
 const SubscriptionContext = createContext();
 
@@ -16,35 +34,6 @@ export function SubscriptionProvider({ children }) {
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // Initial Mock Data for Demo
-    // Initial Mock Data removed as per user request
-
-
-    // Helper function to ensure user document exists
-    const ensureUserExists = async (uid) => {
-        try {
-            const userDocRef = doc(db, 'users', uid);
-            const userDoc = await getDoc(userDocRef);
-            
-            if (!userDoc.exists()) {
-                // Create user document with metadata
-                await setDoc(userDocRef, {
-                    createdAt: new Date().toISOString(),
-                    lastSeen: new Date().toISOString(),
-                    telegramId: String(uid)
-                });
-                console.log(`[SUBSCRIPTIONS] Created user document for ${uid}`);
-            } else {
-                // Update lastSeen timestamp
-                await updateDoc(userDocRef, {
-                    lastSeen: new Date().toISOString()
-                });
-            }
-        } catch (error) {
-            console.error(`[SUBSCRIPTIONS] Error ensuring user exists for ${uid}:`, error);
-        }
-    };
-
     useEffect(() => {
         if (!user?.uid) {
             setSubscriptions([]);
@@ -54,100 +43,22 @@ export function SubscriptionProvider({ children }) {
         }
 
         // Ensure user document exists when they open the app
-        ensureUserExists(user.uid);
+        ensureUserExists(db, user.uid);
 
         try {
-            console.log('[SUBSCRIPTIONS] Setting up Firebase listeners for user:', user.uid);
-            const subsPath = `users/${user.uid}/subscriptions`;
-            const catsPath = `users/${user.uid}/categories`;
-            console.log('[SUBSCRIPTIONS] Subscriptions path:', subsPath);
-            console.log('[SUBSCRIPTIONS] Categories path:', catsPath);
-            
-            // Test direct query first
-            const testCollection = collection(db, 'users', user.uid, 'subscriptions');
-            console.log('[SUBSCRIPTIONS] Testing direct query...');
-            getDocs(testCollection).then((testSnapshot) => {
-                console.log('[SUBSCRIPTIONS] Direct query result - size:', testSnapshot.size);
-                console.log('[SUBSCRIPTIONS] Direct query result - empty:', testSnapshot.empty);
-                testSnapshot.forEach((doc) => {
-                    console.log('[SUBSCRIPTIONS] Direct query - doc:', doc.id, doc.data());
-                });
-            }).catch((err) => {
-                console.error('[SUBSCRIPTIONS] Direct query error:', err);
-            });
-            
             const qSubs = query(collection(db, 'users', user.uid, 'subscriptions'));
             const qCats = query(collection(db, 'users', user.uid, 'categories'));
 
             const unsubSubs = onSnapshot(qSubs, (querySnapshot) => {
-                const subs = [];
-                console.log('[SUBSCRIPTIONS] Snapshot received, size:', querySnapshot.size);
-                console.log('[SUBSCRIPTIONS] Snapshot empty:', querySnapshot.empty);
-                console.log('[SUBSCRIPTIONS] Snapshot metadata:', querySnapshot.metadata);
-                
-                querySnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    console.log('[SUBSCRIPTIONS] Document ID:', doc.id);
-                    console.log('[SUBSCRIPTIONS] Document data (raw):', data);
-                    
-                    // Convert Firestore Timestamp to ISO string if needed
-                    const processedData = { ...data };
-                    if (data.createdAt && data.createdAt.toDate) {
-                        processedData.createdAt = data.createdAt.toDate().toISOString();
-                    }
-                    if (data.nextPaymentDate && typeof data.nextPaymentDate === 'string') {
-                        // Already a string, keep it
-                        processedData.nextPaymentDate = data.nextPaymentDate;
-                    } else if (data.nextPaymentDate && data.nextPaymentDate.toDate) {
-                        processedData.nextPaymentDate = data.nextPaymentDate.toDate().toISOString();
-                    }
-                    
-                    console.log('[SUBSCRIPTIONS] Document data (processed):', processedData);
-                    subs.push({ id: doc.id, ...processedData });
-                });
-                
-                // Sort by order field, then by createdAt if order is missing
-                subs.sort((a, b) => {
-                    const aOrder = a.order !== undefined ? a.order : Infinity;
-                    const bOrder = b.order !== undefined ? b.order : Infinity;
-                    if (aOrder !== bOrder) {
-                        return aOrder - bOrder;
-                    }
-                    // If order is the same or missing, sort by createdAt
-                    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                    return bTime - aTime;
-                });
-                
-                console.log('[SUBSCRIPTIONS] ✅ Received update from Firebase:', subs.length, 'subscriptions');
-                console.log('[SUBSCRIPTIONS] Subscriptions array:', subs);
-                setSubscriptions(subs);
+                setSubscriptions(mapSubscriptionItems(querySnapshot));
                 setLoading(false);
             }, (error) => {
-                console.error('[SUBSCRIPTIONS] ❌ Firebase snapshot error:', error);
-                console.error('[SUBSCRIPTIONS] Error code:', error.code);
-                console.error('[SUBSCRIPTIONS] Error message:', error.message);
-                console.error('[SUBSCRIPTIONS] Full error:', error);
+                console.error('[SUBSCRIPTIONS] Firebase snapshot error:', error);
                 setLoading(false);
             });
 
             const unsubCats = onSnapshot(qCats, (querySnapshot) => {
-                const cats = [];
-                querySnapshot.forEach((doc) => {
-                    cats.push({ id: doc.id, ...doc.data() });
-                });
-                // Sort by order field, then by name if order is missing
-                cats.sort((a, b) => {
-                    const aOrder = a.order !== undefined ? a.order : Infinity;
-                    const bOrder = b.order !== undefined ? b.order : Infinity;
-                    if (aOrder !== bOrder) {
-                        return aOrder - bOrder;
-                    }
-                    // If order is the same or missing, sort by name
-                    return (a.name || '').localeCompare(b.name || '');
-                });
-                setCategories(cats);
-                // Don't set loading to false here, let subscriptions handle it
+                setCategories(mapCategoryItems(querySnapshot));
             }, (error) => {
                 console.error('[SUBSCRIPTIONS] Categories error:', error);
             });
@@ -164,61 +75,32 @@ export function SubscriptionProvider({ children }) {
         }
     }, [user]);
 
-
-
     const addSubscription = async (sub) => {
-        if (!user || user.uid === 'demo_user') {
-            const maxOrder = subscriptions.length > 0 
-                ? Math.max(...subscriptions.map(s => s.order || 0))
-                : -1;
-            const newSub = { 
-                ...sub, 
-                id: Date.now().toString(),
-                order: maxOrder + 1,
+        if (isDemoUser(user)) {
+            const newSub = createDemoEntity(subscriptions, sub, {
                 createdAt: new Date().toISOString()
-            };
+            });
             setSubscriptions([...subscriptions, newSub]);
             return;
         }
         
         try {
-            console.log('[SUBSCRIPTIONS] Adding subscription for user:', user.uid);
-            // Не логируем полные данные для безопасности
-            
-            // Get max order from current subscriptions
-            const maxOrder = subscriptions.length > 0 
-                ? Math.max(...subscriptions.map(s => s.order || 0))
-                : -1;
-            
-            // Add createdAt timestamp and order like in bot
             const subscriptionData = {
                 ...sub,
-                order: maxOrder + 1,
+                order: getNextOrder(subscriptions),
                 createdAt: new Date().toISOString()
             };
-            
-            const collectionRef = collection(db, 'users', user.uid, 'subscriptions');
-            console.log('[SUBSCRIPTIONS] Collection path: users/' + user.uid + '/subscriptions');
-            
-            const docRef = await addDoc(collectionRef, subscriptionData);
-            console.log('[SUBSCRIPTIONS] ✅ Subscription added successfully with ID:', docRef.id);
-            console.log('[SUBSCRIPTIONS] Full document path:', docRef.path);
-            
-            // Data will be synced automatically via onSnapshot, no need to update state manually
+
+            await addUserCollectionDoc(db, user.uid, 'subscriptions', subscriptionData);
         } catch (error) {
-            console.error('[SUBSCRIPTIONS] ❌ Error adding subscription:', error);
-            console.error('[SUBSCRIPTIONS] Error code:', error.code);
-            console.error('[SUBSCRIPTIONS] Error message:', error.message);
-            console.error('[SUBSCRIPTIONS] Full error:', error);
-            
-            // Show error to user (не раскрываем детали ошибки)
+            console.error('[SUBSCRIPTIONS] Error adding subscription:', error);
             alert('Ошибка при добавлении подписки. Пожалуйста, попробуйте еще раз.');
-            throw error; // Re-throw so caller can handle it
+            throw error;
         }
     };
 
     const removeSubscription = async (id) => {
-        if (!user || user.uid === 'demo_user') {
+        if (isDemoUser(user)) {
             setSubscriptions(subscriptions.filter(s => s.id !== id));
             return;
         }
@@ -232,9 +114,8 @@ export function SubscriptionProvider({ children }) {
         }
         
         // Дополнительная проверка безопасности
-        const subscriptionRef = doc(db, 'users', user.uid, 'subscriptions', id);
         try {
-            await deleteDoc(subscriptionRef);
+            await deleteUserCollectionDoc(db, user.uid, 'subscriptions', id);
         } catch (error) {
             console.error('[SUBSCRIPTIONS] Error deleting subscription:', error);
             alert('Ошибка при удалении подписки');
@@ -242,42 +123,35 @@ export function SubscriptionProvider({ children }) {
     };
 
     const addCategory = async (cat) => {
-        if (!user || user.uid === 'demo_user') {
-            const maxOrder = categories.length > 0 
-                ? Math.max(...categories.map(c => c.order || 0))
-                : -1;
-            const newCat = { ...cat, id: Date.now().toString(), order: maxOrder + 1 };
+        if (isDemoUser(user)) {
+            const newCat = createDemoEntity(categories, cat);
             setCategories([...categories, newCat]);
             return newCat;
         }
 
-        const maxOrder = categories.length > 0 
-            ? Math.max(...categories.map(c => c.order || 0))
-            : -1;
-
-        const docRef = await addDoc(collection(db, 'users', user.uid, 'categories'), {
+        const docRef = await addUserCollectionDoc(db, user.uid, 'categories', {
             ...cat,
-            order: maxOrder + 1
+            order: getNextOrder(categories)
         });
 
         // Возвращаем созданную категорию, чтобы UI мог сразу выбрать её
         return {
             id: docRef.id,
             ...cat,
-            order: maxOrder + 1
+            order: getNextOrder(categories)
         };
     };
 
     const removeCategory = async (id) => {
-        if (!user || user.uid === 'demo_user') {
+        if (isDemoUser(user)) {
             setCategories(categories.filter(c => c.id !== id));
             return;
         }
-        await deleteDoc(doc(db, 'users', user.uid, 'categories', id));
+        await deleteUserCollectionDoc(db, user.uid, 'categories', id);
     };
 
     const updateSubscription = async (id, data) => {
-        if (!user || user.uid === 'demo_user') {
+        if (isDemoUser(user)) {
             setSubscriptions(subscriptions.map(s => s.id === id ? { ...s, ...data } : s));
             return;
         }
@@ -297,7 +171,7 @@ export function SubscriptionProvider({ children }) {
                 alert('Ошибка валидации: ' + validation.errors.join(', '));
                 return;
             }
-            await updateDoc(doc(db, 'users', user.uid, 'subscriptions', id), validation.data);
+            await updateUserCollectionDoc(db, user.uid, 'subscriptions', id, validation.data);
         } catch (error) {
             console.error('[SUBSCRIPTIONS] Error updating subscription:', error.code || 'UNKNOWN');
             alert('Ошибка при обновлении подписки');
@@ -306,45 +180,16 @@ export function SubscriptionProvider({ children }) {
 
     const reorderSubscriptions = async (oldIndex, newIndex) => {
         if (oldIndex === newIndex) return;
-        
-        const sortedSubs = [...subscriptions].sort((a, b) => {
-            const aOrder = a.order !== undefined ? a.order : Infinity;
-            const bOrder = b.order !== undefined ? b.order : Infinity;
-            if (aOrder !== bOrder) {
-                return aOrder - bOrder;
-            }
-            const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return bTime - aTime;
-        });
-        
-        const [movedItem] = sortedSubs.splice(oldIndex, 1);
-        sortedSubs.splice(newIndex, 0, movedItem);
-        
-        // Update orders
-        const updates = sortedSubs.map((sub, index) => ({
-            id: sub.id,
-            order: index
-        }));
-        
-        if (!user || user.uid === 'demo_user') {
-            // Update local state
-            const updatedSubs = subscriptions.map(sub => {
-                const update = updates.find(u => u.id === sub.id);
-                return update ? { ...sub, order: update.order } : sub;
-            });
-            setSubscriptions(updatedSubs);
+
+        const updates = buildReorderUpdates(subscriptions, oldIndex, newIndex);
+
+        if (isDemoUser(user)) {
+            setSubscriptions((prev) => applyOrderUpdates(prev, updates));
             return;
         }
-        
-        // Update Firestore in batch
+
         try {
-            const batch = writeBatch(db);
-            updates.forEach(({ id, order }) => {
-                const subRef = doc(db, 'users', user.uid, 'subscriptions', id);
-                batch.update(subRef, { order });
-            });
-            await batch.commit();
+            await commitOrderUpdates(db, user.uid, 'subscriptions', updates);
         } catch (error) {
             console.error('[SUBSCRIPTIONS] Error reordering subscriptions:', error);
             alert('Ошибка при изменении порядка подписок');
@@ -353,43 +198,16 @@ export function SubscriptionProvider({ children }) {
 
     const reorderCategories = async (oldIndex, newIndex) => {
         if (oldIndex === newIndex) return;
-        
-        const sortedCats = [...categories].sort((a, b) => {
-            const aOrder = a.order !== undefined ? a.order : Infinity;
-            const bOrder = b.order !== undefined ? b.order : Infinity;
-            if (aOrder !== bOrder) {
-                return aOrder - bOrder;
-            }
-            return (a.name || '').localeCompare(b.name || '');
-        });
-        
-        const [movedItem] = sortedCats.splice(oldIndex, 1);
-        sortedCats.splice(newIndex, 0, movedItem);
-        
-        // Update orders
-        const updates = sortedCats.map((cat, index) => ({
-            id: cat.id,
-            order: index
-        }));
-        
-        if (!user || user.uid === 'demo_user') {
-            // Update local state
-            const updatedCats = categories.map(cat => {
-                const update = updates.find(u => u.id === cat.id);
-                return update ? { ...cat, order: update.order } : cat;
-            });
-            setCategories(updatedCats);
+
+        const updates = buildReorderUpdates(categories, oldIndex, newIndex);
+
+        if (isDemoUser(user)) {
+            setCategories((prev) => applyOrderUpdates(prev, updates));
             return;
         }
-        
-        // Update Firestore in batch
+
         try {
-            const batch = writeBatch(db);
-            updates.forEach(({ id, order }) => {
-                const catRef = doc(db, 'users', user.uid, 'categories', id);
-                batch.update(catRef, { order });
-            });
-            await batch.commit();
+            await commitOrderUpdates(db, user.uid, 'categories', updates);
         } catch (error) {
             console.error('[SUBSCRIPTIONS] Error reordering categories:', error);
             alert('Ошибка при изменении порядка категорий');
@@ -409,7 +227,7 @@ export function SubscriptionProvider({ children }) {
         const newColor = data.color;
         const categoryNameChanged = newCategoryName && newCategoryName !== oldCategoryName;
 
-        if (!user || user.uid === 'demo_user') {
+        if (isDemoUser(user)) {
             // Update category
             setCategories(categories.map(c => c.id === id ? { ...c, ...data } : c));
             
@@ -427,7 +245,7 @@ export function SubscriptionProvider({ children }) {
         }
 
         // Update category in Firestore
-        await updateDoc(doc(db, 'users', user.uid, 'categories', id), data);
+        await updateUserCollectionDoc(db, user.uid, 'categories', id, data);
 
         // Update all subscriptions with this category
         const subscriptionsToUpdate = subscriptions.filter(s => s.category === oldCategoryName);

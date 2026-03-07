@@ -120,7 +120,7 @@ async function getFaviconIcon(domain) {
     
     try {
         // Проверяем, доступна ли иконка
-        const response = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
+        await fetch(url, { method: 'HEAD', mode: 'no-cors' });
         return url; // Возвращаем URL даже если не можем проверить (CORS)
     } catch (error) {
         console.warn(`[ICON] Error fetching favicon for ${domain}:`, error);
@@ -137,7 +137,7 @@ async function getClearbitIcon(domain) {
     const url = `https://logo.clearbit.com/${domain}`;
     
     try {
-        const response = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
+        await fetch(url, { method: 'HEAD', mode: 'no-cors' });
         return url;
     } catch (error) {
         console.warn(`[ICON] Error fetching Clearbit logo for ${domain}:`, error);

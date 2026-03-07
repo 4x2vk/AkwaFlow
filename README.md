@@ -94,6 +94,10 @@ npm run build
 # Run the bot (in bot/ directory)
 cd bot
 node index.js
+
+# Run bot self-checks
+npm run selftest
+npm run selftest:dialog
 ```
 
 ---
@@ -116,6 +120,16 @@ Organize your subscriptions however you want. Create custom categories with your
 
 ### Auto Icons
 One of my favorite features. When you add a subscription, the app automatically tries to find the service's logo. Type "Netflix" and boom — Netflix logo appears. It uses Clearbit and Google's favicon APIs, so it works for most popular services.
+
+### Telegram Bot Parsing Notes
+The bot uses rule-based parsing for Telegram messages. It now handles a wider range of natural phrasing without switching to a full LLM flow:
+
+- Inline categories such as `Расход 5000₩ такси сегодня категория Транспорт`
+- Voice-like short phrases such as `Netflix 10000₩ 12 числа` or `Кофе 6000вон сегодня`
+- Ambiguous money phrases by asking a short follow-up: `расход`, `доход` or `подписка`
+- Interrupting a follow-up with a new intent like `мои расходы` or `мои подписки`
+
+Current limitation: when a message contains only an amount and a title but no clear type, the bot may ask one extra clarifying question before saving.
 
 ---
 
@@ -161,6 +175,49 @@ I wanted this to feel modern but not trendy. Dark theme by default (because my e
 ## 🤝 Contributing
 
 Found a bug? Have an idea? Feel free to open an issue or submit a PR. I'm always open to suggestions and improvements.
+
+## 🚢 Release Automation
+
+This repository uses `semantic-release` with GitHub Actions.
+
+- Every push to `master` runs the release workflow in `.github/workflows/release.yml`
+- `main` is also supported if the default branch is renamed later
+- A successful release updates `package.json`, `package-lock.json`, and `CHANGELOG.md`
+- The workflow then creates a git tag and a GitHub Release automatically
+
+### Commit Format
+
+Release versioning is based on Conventional Commits:
+
+- `fix: ...` -> patch release
+- `feat: ...` -> minor release
+- `feat!: ...` or a `BREAKING CHANGE:` footer -> major release
+
+Examples:
+
+```text
+fix: correct monthly totals rounding
+feat: add recurring payment filters
+feat!: replace legacy category ids
+```
+
+### Local Dry Run
+
+Run a local verification before merging to the release branch:
+
+```bash
+git checkout master
+git pull
+npm install
+$env:GITHUB_TOKEN="<github-token>"
+npm run release:dry-run
+```
+
+Notes:
+
+- `semantic-release` needs `GITHUB_TOKEN` even for a realistic dry run
+- The GitHub Action uses Node.js 22
+- Only commits that follow Conventional Commits are considered for automatic version bumps
 
 ---
 
