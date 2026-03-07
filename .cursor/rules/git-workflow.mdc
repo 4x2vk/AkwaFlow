@@ -1,0 +1,14 @@
+---
+description: Git branching and PR workflow
+alwaysApply: false
+globs: 
+---
+
+# Git Workflow
+
+- **main** — production-ready код
+- **feat/** — фичи (feat/sort-calendar, feat/auth-oauth)
+- **fix/** — багфиксы
+- **refactor/** — рефакторинг без смены поведения
+
+Перед PR: `/review` для проверки staged изменений.

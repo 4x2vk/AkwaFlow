@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Trash2, Edit2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Layout } from '../components/layout/Layout';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -116,8 +116,7 @@ export default function Categories() {
         const oldIndex = sortedUserCategories.findIndex(c => (c.id || c.name) === catId);
         if (oldIndex === -1 || oldIndex === 0) return;
         
-        // Move to top (index 0)
-        reorderCategories(oldIndex, 0);
+        reorderCategories(oldIndex, oldIndex - 1);
     };
     
     const handleMoveDown = (index) => {
@@ -152,7 +151,7 @@ export default function Categories() {
                         </div>
                     ) : (
                         <>
-                            {categoriesList.map((cat, index) => {
+                            {categoriesList.map((cat) => {
                                 const catId = cat.id || cat.name;
                                 // Find index in userCategoriesInList for non-default categories
                                 const userCategoryIndex = cat.isDefault ? -1 : userCategoriesInList.findIndex(c => (c.id || c.name) === catId);

@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-hooks/set-state-in-effect */
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { isDevMode, getDevUID, setDevUID } from '../lib/devMode';
 
@@ -12,7 +14,6 @@ export function AuthProvider({ children }) {
     const [searchParams] = useSearchParams();
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
-    const initializedRef = useRef(false);
 
     useEffect(() => {
         const devMode = isDevMode();
@@ -77,7 +78,6 @@ export function AuthProvider({ children }) {
                 if (devMode) {
                     console.log('[AUTH] 🧪 DEV MODE ACTIVE');
                 }
-                initializedRef.current = true;
                 return { uid };
             }
             

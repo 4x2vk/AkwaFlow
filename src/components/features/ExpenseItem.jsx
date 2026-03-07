@@ -13,7 +13,7 @@ function isLightColor(hexColor) {
     return luminance > 0.5;
 }
 
-export function ExpenseItem({ id, icon, iconUrl, title, amount, currencySymbol, spentAt, category, color, note, onDelete, onClick, onMoveUp, onMoveDown, index, totalItems }) {
+export function ExpenseItem({ icon, iconUrl, title, amount, currencySymbol, spentAt, category, color, note, onDelete, onClick, onMoveUp, onMoveDown, index, totalItems }) {
     const [failedIconUrl, setFailedIconUrl] = useState(null);
     
     const displayCurrency = currencySymbol || '₩';
