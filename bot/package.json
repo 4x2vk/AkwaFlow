@@ -4,7 +4,9 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "selftest": "node test-functions-simple.mjs",
+    "selftest:dialog": "node test-dialog-regressions.mjs"
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.67.0",

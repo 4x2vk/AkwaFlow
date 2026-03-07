@@ -94,6 +94,10 @@ npm run build
 # Run the bot (in bot/ directory)
 cd bot
 node index.js
+
+# Run bot self-checks
+npm run selftest
+npm run selftest:dialog
 ```
 
 ---
@@ -116,6 +120,16 @@ Organize your subscriptions however you want. Create custom categories with your
 
 ### Auto Icons
 One of my favorite features. When you add a subscription, the app automatically tries to find the service's logo. Type "Netflix" and boom — Netflix logo appears. It uses Clearbit and Google's favicon APIs, so it works for most popular services.
+
+### Telegram Bot Parsing Notes
+The bot uses rule-based parsing for Telegram messages. It now handles a wider range of natural phrasing without switching to a full LLM flow:
+
+- Inline categories such as `Расход 5000₩ такси сегодня категория Транспорт`
+- Voice-like short phrases such as `Netflix 10000₩ 12 числа` or `Кофе 6000вон сегодня`
+- Ambiguous money phrases by asking a short follow-up: `расход`, `доход` or `подписка`
+- Interrupting a follow-up with a new intent like `мои расходы` or `мои подписки`
+
+Current limitation: when a message contains only an amount and a title but no clear type, the bot may ask one extra clarifying question before saving.
 
 ---
 
