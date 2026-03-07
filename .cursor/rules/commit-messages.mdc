@@ -9,7 +9,7 @@ globs:
 Используй **Conventional Commits**:
 
 ```
-<type>(<scope>): <description>
+[<type>] <description>
 
 [optional body]
 [optional footer]
@@ -18,6 +18,6 @@ globs:
 **Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
 **Примеры:**
-- `feat(expenses): add reorder support`
-- `fix(auth): correct token refresh logic`
-- `refactor(domain): extract expense entity`
+- `[feat] add reorder support`
+- `[fix] correct token refresh logic`
+- `[refactor] extract expense entity`
