@@ -1,0 +1,23 @@
+---
+description: Conventional Commits format for commit messages
+alwaysApply: false
+globs: 
+---
+
+# Commit Messages
+
+Используй **Conventional Commits**:
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+[optional footer]
+```
+
+**Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+**Примеры:**
+- `feat(expenses): add reorder support`
+- `fix(auth): correct token refresh logic`
+- `refactor(domain): extract expense entity`

@@ -1,0 +1,12 @@
+---
+description: Testing requirements and coverage
+alwaysApply: false
+globs: **/*.test.{js,jsx,ts,tsx}
+---
+
+# Testing
+
+- Тесты рядом с кодом или в `__tests__/`
+- Именование: `*.test.js` или `*.spec.js`
+- Проект: ESLint для линтинга, `npm run lint`
+- Перед рефакторингом — убедись, что есть тесты или добавь их через `/implement`

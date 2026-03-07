@@ -1,0 +1,12 @@
+---
+description: Code documentation standards
+alwaysApply: false
+globs: **/*.{js,jsx,ts,tsx}
+---
+
+# Documentation
+
+- JSDoc для публичных use cases и портов
+- README в корне модуля при сложной логике
+- ADR в `docs/` для архитектурных решений
+- См. ARCHITECTURE.md для структуры проекта

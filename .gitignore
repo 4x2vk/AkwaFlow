@@ -46,6 +46,9 @@ ehthumbs.db
 .parcel-cache
 *.tsbuildinfo
 
+# Cursor workspace (temporary orchestration data)
+.cursor/workspace/
+
 # Test / coverage
 coverage
 .nyc_output
