@@ -48,9 +48,11 @@ export default function Expenses() {
     const handleMoveUp = (index) => {
         if (index === 0) return;
         const item = filteredExpenses[index];
+        const prevItem = filteredExpenses[index - 1];
         const globalIndex = sortedExpenses.findIndex((e) => e.id === item.id);
-        if (globalIndex < 0) return;
-        reorderExpenses(globalIndex, 0);
+        const prevGlobalIndex = sortedExpenses.findIndex((e) => e.id === prevItem?.id);
+        if (globalIndex < 0 || prevGlobalIndex < 0) return;
+        reorderExpenses(globalIndex, prevGlobalIndex);
     };
 
     const handleMoveDown = (index) => {

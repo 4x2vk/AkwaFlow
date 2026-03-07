@@ -31,8 +31,7 @@ export default function Dashboard() {
     
     const handleMoveUp = (index) => {
         if (index === 0) return;
-        // Move to top (index 0)
-        reorderSubscriptions(index, 0);
+        reorderSubscriptions(index, index - 1);
     };
     
     const handleMoveDown = (index) => {

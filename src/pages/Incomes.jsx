@@ -48,9 +48,11 @@ export default function Incomes() {
     const handleMoveUp = (index) => {
         if (index === 0) return;
         const item = filteredIncomes[index];
+        const prevItem = filteredIncomes[index - 1];
         const globalIndex = sortedIncomes.findIndex((e) => e.id === item.id);
-        if (globalIndex < 0) return;
-        reorderIncomes(globalIndex, 0);
+        const prevGlobalIndex = sortedIncomes.findIndex((e) => e.id === prevItem?.id);
+        if (globalIndex < 0 || prevGlobalIndex < 0) return;
+        reorderIncomes(globalIndex, prevGlobalIndex);
     };
 
     const handleMoveDown = (index) => {

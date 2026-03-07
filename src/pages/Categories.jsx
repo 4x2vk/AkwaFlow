@@ -116,8 +116,7 @@ export default function Categories() {
         const oldIndex = sortedUserCategories.findIndex(c => (c.id || c.name) === catId);
         if (oldIndex === -1 || oldIndex === 0) return;
         
-        // Move to top (index 0)
-        reorderCategories(oldIndex, 0);
+        reorderCategories(oldIndex, oldIndex - 1);
     };
     
     const handleMoveDown = (index) => {
