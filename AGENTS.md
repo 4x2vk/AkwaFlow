@@ -14,6 +14,7 @@ This project uses Cursor rules that behave like specialist agents. Apply the rig
 | "Search the web for…", "What's the latest on…?", "Актуальная инфа по…" | **web-search-researcher** — web search and fetch, cite sources |
 | "Commit my changes", "Закоммить", "Сделай коммит" | **cmd-commit** — plan commits, show user, execute after approval |
 | "Help me debug…", "Что не так с…", "Почему падает…" | **cmd-debug** — investigate logs, git, and code without editing |
+| "Code review новой фичи", "Review my feature", "Протестируй и дай советы" | **feature-code-review** — review code, run tests/lint, list issues and recommendations |
 
 ## Quick reference
 
@@ -25,6 +26,7 @@ This project uses Cursor rules that behave like specialist agents. Apply the rig
 - **web-search-researcher** — RESEARCH on the web. Multiple searches, fetch, cite, summarize.
 - **cmd-commit** — COMMIT with a plan, user approval, no AI attribution.
 - **cmd-debug** — DEBUG by investigating; no edits unless the user asks for a fix.
+- **feature-code-review** — REVIEW new feature: architecture, lint, tests; concrete issues and advice.
 
 ## Notes
 

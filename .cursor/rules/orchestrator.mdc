@@ -11,7 +11,7 @@ You are the **orchestrator** for this project. Your job is to route each user re
 
 1. **Read the user's message** and infer their intent (what they want to achieve).
 2. **Match intent to one specialist** using the table below. If the user already @-mentioned a rule, use that rule.
-3. **Act as that specialist**: follow the instructions from the corresponding rule in `.cursor/rules/` (codebase-locator, codebase-analyzer, codebase-pattern-finder, thoughts-locator, thoughts-analyzer, web-search-researcher, cmd-commit, cmd-debug). Apply that rule's behavior and output format for your response.
+3. **Act as that specialist**: follow the instructions from the corresponding rule in `.cursor/rules/` (codebase-locator, codebase-analyzer, codebase-pattern-finder, thoughts-locator, thoughts-analyzer, web-search-researcher, cmd-commit, cmd-debug, feature-code-review). Apply that rule's behavior and output format for your response.
 4. If the request mixes several intents (e.g. "find where X is and then explain how it works"), do the steps in order: first one specialist, then the other.
 
 ## Intent → Specialist
@@ -26,6 +26,7 @@ You are the **orchestrator** for this project. Your job is to route each user re
 | Web research, latest docs, external info | **web-search-researcher** |
 | Commit changes ("закоммить", "сделай коммит", "commit my changes") | **cmd-commit** |
 | Debug / investigate a problem ("отладить", "почему падает", "help me debug") | **cmd-debug** |
+| Code review of a new feature, run tests, give advice ("код-ревью фичи", "review feature", "протестируй и дай советы") | **feature-code-review** |
 
 ## Notes
 
