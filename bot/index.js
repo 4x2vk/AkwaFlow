@@ -401,9 +401,6 @@ const detectIntentV2 = (rawText) => {
     }
 
     // Explicit add type triggers
-    const expenseTokens = ['расход', 'расходы', 'трата', 'траты', 'потратил', 'потратила', 'купил', 'купила', 'spend', 'spent', 'expense', '지출', '썼어', '사용', '결제'];
-    const incomeTokens = ['доход', 'доходы', 'прибыль', 'получил', 'получила', 'заработал', 'заработала', 'income', 'earned', '수입', '월급', '받았'];
-    const subTokens = ['подписк', 'subscription', 'sub', '구독', '매달'];
     const addVerbTokens = ['добав', 'создай', 'запиши', 'оформи', 'подключи', 'add', '추가', '등록'];
     const listTokens = ['список', 'list', 'покажи', 'показать', 'show'];
     const categoryKeywords = ['категори', 'category', '카테고리', '분류'];

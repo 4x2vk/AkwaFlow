@@ -176,6 +176,49 @@ I wanted this to feel modern but not trendy. Dark theme by default (because my e
 
 Found a bug? Have an idea? Feel free to open an issue or submit a PR. I'm always open to suggestions and improvements.
 
+## 🚢 Release Automation
+
+This repository uses `semantic-release` with GitHub Actions.
+
+- Every push to `master` runs the release workflow in `.github/workflows/release.yml`
+- `main` is also supported if the default branch is renamed later
+- A successful release updates `package.json`, `package-lock.json`, and `CHANGELOG.md`
+- The workflow then creates a git tag and a GitHub Release automatically
+
+### Commit Format
+
+Release versioning is based on Conventional Commits:
+
+- `fix: ...` -> patch release
+- `feat: ...` -> minor release
+- `feat!: ...` or a `BREAKING CHANGE:` footer -> major release
+
+Examples:
+
+```text
+fix: correct monthly totals rounding
+feat: add recurring payment filters
+feat!: replace legacy category ids
+```
+
+### Local Dry Run
+
+Run a local verification before merging to the release branch:
+
+```bash
+git checkout master
+git pull
+npm install
+$env:GITHUB_TOKEN="<github-token>"
+npm run release:dry-run
+```
+
+Notes:
+
+- `semantic-release` needs `GITHUB_TOKEN` even for a realistic dry run
+- The GitHub Action uses Node.js 22
+- Only commits that follow Conventional Commits are considered for automatic version bumps
+
 ---
 
 ## 📝 License
