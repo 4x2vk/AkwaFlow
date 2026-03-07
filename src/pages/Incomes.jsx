@@ -7,12 +7,14 @@ import { MonthPicker } from '../components/ui/MonthPicker';
 import { AddIncomeModal } from '../components/features/AddIncomeModal';
 import { IncomeItem } from '../components/features/IncomeItem';
 import { useIncomes } from '../context/IncomeContext';
-
-const getMonthKey = (date) => {
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return null;
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-};
+import { sortByOrderThenDate } from '../lib/orderedCollections';
+import {
+    buildMonthCurrencyTotals,
+    filterItemsByMonth,
+    getDefaultMonthKey,
+    getPreviousMonthKey,
+    resolveReorderMove
+} from '../lib/transactionPageUtils';
 
 export default function Incomes() {
     const { incomes, loading, removeIncome, reorderIncomes } = useIncomes();
@@ -20,73 +22,45 @@ export default function Incomes() {
     const [editingIncome, setEditingIncome] = useState(null);
 
     const now = useMemo(() => new Date(), []);
-    const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const defaultMonth = getDefaultMonthKey(now);
     const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
 
-    // Sort incomes by order
-    const sortedIncomes = useMemo(() => {
-        return [...incomes].sort((a, b) => {
-            const aOrder = a.order !== undefined ? a.order : Infinity;
-            const bOrder = b.order !== undefined ? b.order : Infinity;
-            if (aOrder !== bOrder) {
-                return aOrder - bOrder;
-            }
-            const aTime = new Date(a.receivedAt || a.createdAt || 0).getTime();
-            const bTime = new Date(b.receivedAt || b.createdAt || 0).getTime();
-            return bTime - aTime;
-        });
-    }, [incomes]);
+    const sortedIncomes = useMemo(
+        () => sortByOrderThenDate(incomes, ['receivedAt', 'createdAt']),
+        [incomes]
+    );
 
-    const filteredIncomes = useMemo(() => {
-        if (!selectedMonth) return sortedIncomes;
-        return sortedIncomes.filter((e) => {
-            const key = getMonthKey(e.receivedAt || e.createdAt);
-            return key === selectedMonth;
-        });
-    }, [sortedIncomes, selectedMonth]);
+    const filteredIncomes = useMemo(
+        () => filterItemsByMonth(sortedIncomes, selectedMonth, ['receivedAt', 'createdAt']),
+        [selectedMonth, sortedIncomes]
+    );
 
     const handleMoveUp = (index) => {
-        if (index === 0) return;
-        const item = filteredIncomes[index];
-        const prevItem = filteredIncomes[index - 1];
-        const globalIndex = sortedIncomes.findIndex((e) => e.id === item.id);
-        const prevGlobalIndex = sortedIncomes.findIndex((e) => e.id === prevItem?.id);
-        if (globalIndex < 0 || prevGlobalIndex < 0) return;
-        reorderIncomes(globalIndex, prevGlobalIndex);
+        const move = resolveReorderMove(filteredIncomes, sortedIncomes, index, 'up');
+        if (!move) return;
+        reorderIncomes(move.fromIndex, move.toIndex);
     };
 
     const handleMoveDown = (index) => {
-        if (index >= filteredIncomes.length - 1) return;
-        const item = filteredIncomes[index];
-        const nextItem = filteredIncomes[index + 1];
-        const globalIndex = sortedIncomes.findIndex((e) => e.id === item.id);
-        const nextGlobalIndex = sortedIncomes.findIndex((e) => e.id === nextItem.id);
-        if (globalIndex < 0 || nextGlobalIndex < 0) return;
-        reorderIncomes(globalIndex, nextGlobalIndex);
+        const move = resolveReorderMove(filteredIncomes, sortedIncomes, index, 'down');
+        if (!move) return;
+        reorderIncomes(move.fromIndex, move.toIndex);
     };
 
     const thisMonthKey = selectedMonth || defaultMonth;
-    const prevMonthDate = useMemo(() => {
-        const [y, m] = (selectedMonth || defaultMonth).split('-').map(Number);
-        return new Date(y, m - 2, 1);
-    }, [selectedMonth, defaultMonth]);
-    const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const prevMonthKey = useMemo(
+        () => getPreviousMonthKey(thisMonthKey),
+        [thisMonthKey]
+    );
 
-    const { totalsThisMonth, totalsPrevMonth } = useMemo(() => {
-        const tThis = {};
-        const tPrev = {};
-        incomes.forEach((e) => {
-            if (!e?.receivedAt) return;
-            const d = new Date(e.receivedAt);
-            if (isNaN(d.getTime())) return;
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            const sym = e.currencySymbol || '₩';
-            const amt = Number(e.amount || 0);
-            if (key === thisMonthKey) tThis[sym] = (tThis[sym] || 0) + amt;
-            if (key === prevMonthKey) tPrev[sym] = (tPrev[sym] || 0) + amt;
-        });
-        return { totalsThisMonth: tThis, totalsPrevMonth: tPrev };
-    }, [incomes, thisMonthKey, prevMonthKey]);
+    const { totalsThisMonth, totalsPrevMonth } = useMemo(
+        () => buildMonthCurrencyTotals(incomes, {
+            dateFields: ['receivedAt', 'createdAt'],
+            currentMonthKey: thisMonthKey,
+            previousMonthKey: prevMonthKey
+        }),
+        [incomes, prevMonthKey, thisMonthKey]
+    );
 
     const handleAdd = () => {
         setEditingIncome(null);
